@@ -15,6 +15,7 @@ import {
   notifyLauncherTurn,
   markLauncherManualTurnStarted,
   readLauncherBrowserHostDescriptor,
+  refreshRemoteLauncherBrowserHostDescriptor,
   releaseLauncherRetainedConversation,
   selectLauncherPage,
   startLauncherManualTurn,
@@ -33,6 +34,7 @@ function descriptorFile(
   controlEndpoint = "http://127.0.0.1:39111",
   profile: "production" | "development" = "production",
   endpoint = "http://127.0.0.1:39110",
+  remote = false,
 ): string {
   const root = mkdtempSync(join(tmpdir(), "codex-launcher-descriptor-"));
   roots.push(root);
@@ -42,6 +44,7 @@ function descriptorFile(
     kind: LAUNCHER_BROWSER_HOST_KIND,
     profile,
     pid: process.pid,
+    ...(remote ? { remote: true } : {}),
     endpoint,
     control: {
       endpoint: controlEndpoint,
@@ -74,6 +77,76 @@ test("launcher descriptor is owner-only, loopback-only, and process-bound", () =
   if (process.platform !== "win32") {
     chmodSync(path, 0o644);
     expect(() => readLauncherBrowserHostDescriptor(path)).toThrow("unsafe permissions");
+  }
+});
+
+test("remote launcher descriptor refreshes surface ownership and marks turn ownership remote", async () => {
+  const requests: Array<{ url?: string; body: unknown }> = [];
+  const remoteSurfaceId = "r".repeat(32);
+  const createdAt = new Date().toISOString();
+  const server = createServer(async (request, response) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of request) chunks.push(Buffer.from(chunk));
+    const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    requests.push({ url: request.url, body });
+    response.writeHead(200, { "content-type": "application/json" });
+    if (request.url === "/v1/browser/descriptor") {
+      response.end(JSON.stringify({
+        version: 3,
+        kind: LAUNCHER_BROWSER_HOST_KIND,
+        profile: "production",
+        partition: "persist:codex-web-gpt-chatgpt",
+        idleUrl: LAUNCHER_BROWSER_IDLE_URL,
+        surfaceId: remoteSurfaceId,
+        surfaceTargets: { [remoteSurfaceId]: "fresh-native-target" },
+        createdAt,
+      }));
+      return;
+    }
+    response.end(JSON.stringify({
+      ok: true,
+      surfaceId: remoteSurfaceId,
+      reused: false,
+      connectorBound: false,
+    }));
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  try {
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("test server has no port");
+    const path = descriptorFile(
+      `http://127.0.0.1:${address.port}`,
+      "production",
+      "http://127.0.0.1:39110",
+      true,
+    );
+    const descriptor = readLauncherBrowserHostDescriptor(path);
+    expect(descriptor.remote).toBe(true);
+    const refreshed = await refreshRemoteLauncherBrowserHostDescriptor(descriptor);
+    expect(refreshed.surfaceId).toBe(remoteSurfaceId);
+    expect(refreshed.surfaceTargets).toEqual({
+      [remoteSurfaceId]: "fresh-native-target",
+    });
+
+    await notifyLauncherTurn(path, {
+      phase: "start",
+      traceId: "remote123456",
+      helperPid: process.pid,
+    });
+    expect(requests.at(-1)).toEqual({
+      url: "/v1/turn/start",
+      body: {
+        phase: "start",
+        traceId: "remote123456",
+        helperPid: process.pid,
+        remoteOwner: true,
+      },
+    });
+  } finally {
+    await new Promise<void>(resolve => server.close(() => resolve()));
   }
 });
 

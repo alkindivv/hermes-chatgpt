@@ -30,6 +30,7 @@ import { installRuntimeKeyBytes, managedRuntimeKeyPath, stopTunnel, tunnelStatus
 import { getTunnelServiceStatus, restartTunnelService, startTunnelService, stopTunnelService, uninstallTunnelService } from "./tunnel-service";
 import { VERSION } from "./version";
 import { runDevCommand } from "./dev-chat/cli";
+import { connectRemoteBrowserLink } from "./remote-browser-link";
 
 const HELP = `codex-chatgpt-web ${VERSION}
 
@@ -43,6 +44,7 @@ Usage:
   codex-chatgpt-web route <status|connect|disconnect>
   codex-chatgpt-web subagents <status|compatibility-v1|native>
   codex-chatgpt-web browser check
+  codex-chatgpt-web remote-browser connect SSH_TARGET [options]
   codex-chatgpt-web dev launcher
   codex-chatgpt-web dev status [--json]
   codex-chatgpt-web dev setup <--browser-only|--full> [options]
@@ -82,6 +84,11 @@ Setup options:
   --inline-skills             Keep selected skills inline (default)
   --standard-context           Disable experimental multi-message context
   --acknowledge-unofficial     Accept the one-time unofficial-browser-automation notice
+
+Remote browser options:
+  --remote-descriptor PATH     Descriptor on the VPS (default: ~/.codex-chatgpt-web/runtime/launcher-browser.json)
+  --local-descriptor PATH      Owner-only descriptor written on this Mac
+  --browser-helper-script PATH Override the local browser helper script
 
 Global:
   --home PATH                  Override ~/.codex-chatgpt-web
@@ -363,6 +370,25 @@ async function setupCommand(args: string[]): Promise<void> {
   stdout.write("Restart the Codex app once so its native model catalog refreshes through the installed route.\n");
 }
 
+async function remoteBrowserCommand(args: string[]): Promise<void> {
+  const action = args.shift();
+  if (action !== "connect") {
+    throw new Error("Remote browser command must be: remote-browser connect SSH_TARGET");
+  }
+  const target = args.shift();
+  if (!target) throw new Error("remote-browser connect requires SSH_TARGET");
+  const remoteDescriptorPath = takeOption(args, "--remote-descriptor");
+  const localDescriptorPath = takeOption(args, "--local-descriptor");
+  const browserHelperScriptPath = takeOption(args, "--browser-helper-script");
+  assertNoArgs(args);
+  await connectRemoteBrowserLink({
+    target,
+    ...(remoteDescriptorPath ? { remoteDescriptorPath } : {}),
+    ...(localDescriptorPath ? { localDescriptorPath } : {}),
+    ...(browserHelperScriptPath ? { browserHelperScriptPath } : {}),
+  });
+}
+
 async function doctorCommand(args: string[]): Promise<void> {
   const json = takeFlag(args, "--json");
   assertNoArgs(args);
@@ -581,6 +607,8 @@ async function main(): Promise<void> {
       await checkBrowserEngine(config);
       stdout.write("Playwright can launch the configured Chrome executable.\n");
     }
+  } else if (command === "remote-browser") {
+    await remoteBrowserCommand(args);
   } else if (command === "serve") {
     assertNoArgs(args);
     const config = loadConfig();

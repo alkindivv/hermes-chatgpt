@@ -41,6 +41,8 @@ export interface LauncherBrowserHostDescriptor {
   kind: typeof LAUNCHER_BROWSER_HOST_KIND;
   profile: LauncherBrowserHostProfile;
   pid: number;
+  /** Remote descriptors are local SSH-link descriptors whose browser process lives on another host. */
+  remote?: true;
   endpoint: string;
   control: {
     endpoint: string;
@@ -92,6 +94,9 @@ function assertDescriptorShape(value: unknown): LauncherBrowserHostDescriptor {
   if (!Number.isInteger(descriptor.pid) || descriptor.pid! < 1) {
     throw new Error("Launcher browser descriptor has an invalid pid");
   }
+  if (descriptor.remote !== undefined && descriptor.remote !== true) {
+    throw new Error("Launcher browser descriptor has an invalid remote flag");
+  }
   const endpoint = assertLoopbackEndpoint(descriptor.endpoint, "Launcher CDP endpoint");
   if (!descriptor.control || typeof descriptor.control !== "object") {
     throw new Error("Launcher browser descriptor is missing its control channel");
@@ -138,6 +143,7 @@ function assertDescriptorShape(value: unknown): LauncherBrowserHostDescriptor {
     kind: LAUNCHER_BROWSER_HOST_KIND,
     profile: descriptor.profile,
     pid: descriptor.pid!,
+    ...(descriptor.remote === true ? { remote: true as const } : {}),
     endpoint,
     control: { endpoint: controlEndpoint, token: descriptor.control.token },
     helper: { executable: helperExecutable, script: helperScript },
@@ -171,6 +177,65 @@ export function readLauncherBrowserHostDescriptor(configuredPath: string): Launc
     throw new Error(`Launcher browser host process is not running (pid ${descriptor.pid})`);
   }
   return descriptor;
+}
+
+function assertSurfaceTargets(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)
+    || Object.entries(value).some(([surface, target]) => !/^[A-Za-z0-9_-]{32}$/.test(surface)
+      || typeof target !== "string" || !target.trim())
+    || new Set(Object.values(value)).size !== Object.keys(value).length) {
+    throw new Error("Launcher browser descriptor has invalid or duplicated surface targets");
+  }
+  return value as Record<string, string>;
+}
+
+export async function refreshRemoteLauncherBrowserHostDescriptor(
+  descriptor: LauncherBrowserHostDescriptor,
+  timeoutMs = 5_000,
+): Promise<LauncherBrowserHostDescriptor> {
+  if (descriptor.remote !== true) return descriptor;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`${descriptor.control.endpoint}/v1/browser/descriptor`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${descriptor.control.token}`,
+        "content-type": "application/json",
+      },
+      body: "{}",
+      signal: controller.signal,
+    });
+    const body = await response.json().catch(() => ({})) as Record<string, unknown>;
+    if (!response.ok) {
+      const detail = typeof body.error === "string" ? `: ${body.error}` : "";
+      throw new Error(`HTTP ${response.status}${detail}`);
+    }
+    if (body.version !== 3
+      || body.kind !== LAUNCHER_BROWSER_HOST_KIND
+      || body.profile !== descriptor.profile
+      || body.partition !== descriptor.partition
+      || body.idleUrl !== descriptor.idleUrl) {
+      throw new Error("Remote launcher descriptor identity changed");
+    }
+    if (typeof body.surfaceId !== "string" || !/^[A-Za-z0-9_-]{32}$/.test(body.surfaceId)) {
+      throw new Error("Remote launcher descriptor has an invalid owned surface id");
+    }
+    const surfaceTargets = assertSurfaceTargets(body.surfaceTargets);
+    if (typeof body.createdAt !== "string" || Number.isNaN(Date.parse(body.createdAt))) {
+      throw new Error("Remote launcher descriptor has an invalid creation time");
+    }
+    return {
+      ...descriptor,
+      surfaceId: body.surfaceId,
+      surfaceTargets,
+      createdAt: body.createdAt,
+    };
+  } catch (error) {
+    throw new Error(`Remote launcher descriptor refresh failed: ${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function assertCdpReady(descriptor: LauncherBrowserHostDescriptor, timeoutMs: number): Promise<void> {
@@ -260,7 +325,13 @@ export async function connectLauncherBrowserHost(
   if (abortSignal?.aborted) {
     throw new DOMException("Launcher browser connection aborted", "AbortError");
   }
-  const descriptor = readLauncherBrowserHostDescriptor(descriptorPath);
+  let descriptor = readLauncherBrowserHostDescriptor(descriptorPath);
+  if (descriptor.remote === true) {
+    descriptor = await refreshRemoteLauncherBrowserHostDescriptor(
+      descriptor,
+      Math.min(timeoutMs, 5_000),
+    );
+  }
   await assertCdpReady(descriptor, Math.min(timeoutMs, 5_000));
   let browser: Browser;
   try {
@@ -439,7 +510,7 @@ async function launcherManualRequest(
         authorization: `Bearer ${descriptor.control.token}`,
         "content-type": "application/json",
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify(descriptor.remote === true ? { ...body, remoteOwner: true } : body),
       signal: controller.signal,
     });
     const decoded = await response.json().catch(() => ({})) as Record<string, unknown>;
@@ -633,7 +704,7 @@ export async function notifyLauncherTurn(
         authorization: `Bearer ${descriptor.control.token}`,
         "content-type": "application/json",
       },
-      body: JSON.stringify(activity),
+      body: JSON.stringify(descriptor.remote === true ? { ...activity, remoteOwner: true } : activity),
       signal: controller.signal,
     });
     if (!response.ok) {

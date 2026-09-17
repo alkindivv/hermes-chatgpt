@@ -1558,6 +1558,58 @@ test("a live helper retains exclusive ownership of its running turn", async () =
   );
 });
 
+test("a remote helper uses heartbeat liveness instead of VPS-local pid checks", async () => {
+  const tab = {
+    id: "tab-remote-owner",
+    surfaceId: "surface-remote-owner",
+    traceId: "trace_remote_owner",
+    helperPid: 2_147_483_647,
+    remoteOwner: true,
+    status: "running",
+    interactionMode: "automatic",
+    loading: true,
+    message: "ChatGPT is working",
+    lastHeartbeatAt: Date.now(),
+    view: {
+      webContents: {
+        isDestroyed: () => false,
+        setBackgroundThrottling() {},
+      },
+    },
+  };
+  const base = {
+    manualOperation: null,
+    turnTabs: new Map([[tab.id, tab]]),
+    userCancelledTurnOwners: new Map(),
+    selectedTabId: "home",
+    syncViewVisibility() {},
+    snapshot: () => ({ tabs: [] }),
+    publishState() {},
+    writeDescriptor() {},
+    logger: { info() {}, warn() {} },
+  };
+
+  await assert.rejects(
+    BrowserHost.prototype.beginTurn.call(base, tab.traceId, false, process.pid, undefined, undefined, false, true),
+    /owned by another helper process/,
+  );
+
+  tab.lastHeartbeatAt = 0;
+  const lease = await BrowserHost.prototype.beginTurn.call(
+    base,
+    tab.traceId,
+    false,
+    process.pid,
+    undefined,
+    undefined,
+    false,
+    true,
+  );
+  assert.equal(lease.tabId, tab.id);
+  assert.equal(tab.helperPid, process.pid);
+  assert.equal(tab.remoteOwner, true);
+});
+
 test("a replacement helper takes over only after the previous owner exited", async () => {
   const deadPid = 2_147_483_647;
   const tab = {

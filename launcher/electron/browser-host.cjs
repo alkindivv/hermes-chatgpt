@@ -527,7 +527,7 @@ class BrowserHost {
     return this.turnTabs.get(this.selectedTabId) || null;
   }
 
-  async createTurnTab(traceId, helperPid, conversationKey, connectorIdentity) {
+  async createTurnTab(traceId, helperPid, conversationKey, connectorIdentity, remoteOwner = false) {
     if (this.turnTabs.size >= MAX_BROWSER_TABS
       && !BrowserHost.prototype.evictOldestReclaimableTurnTab.call(this)) {
       throw new Error(
@@ -557,6 +557,7 @@ class BrowserHost {
       connectorIdentity,
       connectorBound: false,
       helperPid,
+      remoteOwner,
       view,
       status: "running",
       ordinal,
@@ -598,7 +599,7 @@ class BrowserHost {
     return tab;
   }
 
-  createManualTurnTab(traceId, helperPid, conversationKey, prompt, manualSubmitTimeoutMs) {
+  createManualTurnTab(traceId, helperPid, conversationKey, prompt, manualSubmitTimeoutMs, remoteOwner = false) {
     if (this.turnTabs.size >= MAX_BROWSER_TABS
       && !BrowserHost.prototype.evictOldestReclaimableTurnTab.call(this)) {
       throw new Error(
@@ -627,6 +628,7 @@ class BrowserHost {
       connectorIdentity: null,
       connectorBound: false,
       helperPid,
+      remoteOwner,
       view,
       status: "running",
       ordinal,
@@ -1362,7 +1364,7 @@ class BrowserHost {
           this.removeTurnTab(tab, false);
           continue;
         }
-        if (tab.status === "running" && !processRunning(tab.helperPid)) {
+        if (tab.status === "running" && !tab.remoteOwner && !processRunning(tab.helperPid)) {
           this.logger.warn("browser.manual_orphan_turn_reaped", {
             tabId: tab.id,
             traceId: tab.traceId,
@@ -1944,7 +1946,7 @@ class BrowserHost {
     this.clipboard.writeText(prompt);
   }
 
-  beginManualTurn(traceId, helperPid, prompt, conversationKey, resumePrompt, compaction = false) {
+  beginManualTurn(traceId, helperPid, prompt, conversationKey, resumePrompt, compaction = false, remoteOwner = false) {
     if (this.manualOperation) {
       throw new Error(`ChatGPT browser is busy with ${this.manualOperation}`);
     }
@@ -1981,7 +1983,7 @@ class BrowserHost {
         throw new Error(`Browser turn ${traceId} already belongs to automatic interaction`);
       }
       if (sameTrace.helperPid !== helperPid) {
-        if (processRunning(sameTrace.helperPid)) {
+        if (sameTrace.remoteOwner || processRunning(sameTrace.helperPid)) {
           throw new Error(`Zero Risk turn ${traceId} is owned by another process`);
         }
         this.signalManualTerminal(sameTrace, "failed");
@@ -2002,6 +2004,7 @@ class BrowserHost {
         throw new Error(`Zero Risk turn ${traceId} was retried with a different prompt`);
       }
       sameTrace.helperPid = helperPid;
+      sameTrace.remoteOwner = remoteOwner;
       this.selectedTabId = sameTrace.id;
       this.showWindow();
       this.show();
@@ -2031,6 +2034,7 @@ class BrowserHost {
       this.writeManualPrompt(resumePrompt);
       tab.traceId = traceId;
       tab.helperPid = helperPid;
+      tab.remoteOwner = remoteOwner;
       tab.status = "running";
       tab.loading = false;
       tab.message = "Paste the copied prompt, add any images yourself because Zero Risk cannot transfer them, choose a model and effort, then press Sent";
@@ -2049,6 +2053,7 @@ class BrowserHost {
         conversationKey,
         prompt,
         manualSubmitTimeoutMs,
+        remoteOwner,
       );
       try {
         this.writeManualPrompt(prompt);
@@ -2246,6 +2251,7 @@ class BrowserHost {
     conversationKey,
     connectorIdentity,
     requireRetainedConversation = false,
+    remoteOwner = false,
   ) {
     if (this.manualOperation) {
       throw new Error(`ChatGPT browser is busy with ${this.manualOperation}`);
@@ -2279,7 +2285,10 @@ class BrowserHost {
     if (existing) {
       const reused = existing.status === "ready";
       if (existing.status === "running" && existing.helperPid !== helperPid) {
-        if (processRunning(existing.helperPid)) {
+        const previousOwnerAlive = existing.remoteOwner
+          ? Date.now() - (existing.lastHeartbeatAt ?? 0) < TURN_HEARTBEAT_TIMEOUT_MS
+          : processRunning(existing.helperPid);
+        if (previousOwnerAlive) {
           throw new Error(`ChatGPT browser turn ${traceId} is owned by another helper process`);
         }
         this.logger.warn("browser.stale_turn_owner_replaced", {
@@ -2291,6 +2300,7 @@ class BrowserHost {
         });
       }
       existing.helperPid = helperPid;
+      existing.remoteOwner = remoteOwner;
       existing.traceId = traceId;
       existing.status = "running";
       existing.loading = true;
@@ -2321,7 +2331,9 @@ class BrowserHost {
       error.code = "retained_conversation_unavailable";
       throw error;
     }
-    const tab = await this.createTurnTab(traceId, helperPid, conversationKey, connectorIdentity);
+    const tab = remoteOwner
+      ? await this.createTurnTab(traceId, helperPid, conversationKey, connectorIdentity, true)
+      : await this.createTurnTab(traceId, helperPid, conversationKey, connectorIdentity);
     this.selectedTabId = tab.id;
     if (reveal) this.show();
     else this.syncViewVisibility();
@@ -2900,7 +2912,7 @@ class BrowserHost {
     }
   }
 
-  writeDescriptor() {
+  descriptorSnapshot() {
     const surfaceTargets = {};
     if (browserInteractionModeFor(this) === "automatic") {
       const surfaces = [[this.surfaceId, this.view?.webContents],
@@ -2912,7 +2924,7 @@ class BrowserHost {
         surfaceTargets[surfaceId] = contents.getOrCreateDevToolsTargetId();
       }
     }
-    const descriptor = {
+    return {
       version: 3,
       kind: "codex-web-gpt-launcher",
       profile: this.profile,
@@ -2926,7 +2938,13 @@ class BrowserHost {
       surfaceTargets,
       createdAt: new Date().toISOString(),
     };
-    writePrivateFileAtomic(this.descriptorPath, `${JSON.stringify(descriptor, null, 2)}\n`);
+  }
+
+  writeDescriptor() {
+    writePrivateFileAtomic(
+      this.descriptorPath,
+      `${JSON.stringify(BrowserHost.prototype.descriptorSnapshot.call(this), null, 2)}\n`,
+    );
   }
 
   async persistSession() {

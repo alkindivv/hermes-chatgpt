@@ -99,6 +99,7 @@ class BrowserControlServer {
       || request.url === "/v1/turn/end";
     const isTurnRelease = request.url === "/v1/turn/release";
     const isSessionInspect = request.url === "/v1/session/inspect";
+    const isBrowserDescriptor = request.url === "/v1/browser/descriptor";
     const isProxyResolution = request.url === "/v1/network/resolve-proxy";
     const manualAction = new Map([
       ["/v1/manual/start", "start"],
@@ -108,7 +109,7 @@ class BrowserControlServer {
       ["/v1/manual/end", "end"],
       ["/v1/manual/cancel", "cancel"],
     ]).get(request.url);
-    if (request.method !== "POST" || (!isTurn && !isTurnRelease && !isSessionInspect && !isProxyResolution && !manualAction)) {
+    if (request.method !== "POST" || (!isTurn && !isTurnRelease && !isSessionInspect && !isBrowserDescriptor && !isProxyResolution && !manualAction)) {
       writeJson(response, 404, { error: "not_found" });
       return;
     }
@@ -133,6 +134,13 @@ class BrowserControlServer {
       const preferences = this.getPreferences();
       const host = this.getBrowserHost();
       if (!host) throw new Error("browser host is not ready");
+      if (isBrowserDescriptor) {
+        if (typeof host.descriptorSnapshot !== "function") {
+          throw new Error("browser host descriptor snapshot is unavailable");
+        }
+        writeJson(response, 200, host.descriptorSnapshot());
+        return;
+      }
       if (isSessionInspect) {
         if (host.browserInteractionMode() === "manual") {
           const error = new Error(
@@ -159,6 +167,9 @@ class BrowserControlServer {
       }
       if (!Number.isInteger(body.helperPid) || body.helperPid < 1) {
         throw new Error("browser helper pid is invalid");
+      }
+      if (body.remoteOwner !== undefined && typeof body.remoteOwner !== "boolean") {
+        throw new Error("remoteOwner is invalid");
       }
       if (body.conversationKey !== undefined && !/^[a-f0-9]{64}$/.test(body.conversationKey)) {
         throw new Error("conversationKey is invalid");
@@ -213,6 +224,7 @@ class BrowserControlServer {
             body.conversationKey,
             body.resumePrompt,
             body.compaction === true,
+            ...(body.remoteOwner === true ? [true] : []),
           );
           this.logger.info("browser.manual_control_started", {
             traceId: body.traceId,
@@ -302,6 +314,7 @@ class BrowserControlServer {
           body.conversationKey,
           body.connectorIdentity,
           body.requireRetainedConversation === true,
+          ...(body.remoteOwner === true ? [true] : []),
         );
         this.logger.info("browser.turn_started", { traceId: body.traceId });
         writeJson(response, 200, { ok: true, ...lease });

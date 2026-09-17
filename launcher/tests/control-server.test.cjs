@@ -154,6 +154,92 @@ test("browser control server authenticates and owns turn visibility", async () =
   }
 });
 
+test("browser control exposes descriptor snapshots and forwards remote ownership", async () => {
+  const calls = [];
+  const surfaceId = "r".repeat(32);
+  const snapshot = {
+    version: 3,
+    kind: "codex-web-gpt-launcher",
+    profile: "production",
+    pid: process.pid,
+    endpoint: "http://127.0.0.1:39110",
+    control: {
+      endpoint: "http://127.0.0.1:39111",
+      token: "launcher-control-token-0123456789abcdefghijklmnop",
+    },
+    helper: { executable: process.execPath, script: __filename },
+    partition: "persist:codex-web-gpt-chatgpt",
+    idleUrl: "data:text/html;charset=utf-8,test",
+    surfaceId,
+    surfaceTargets: { [surfaceId]: "fresh-native-target" },
+    createdAt: new Date().toISOString(),
+  };
+  const host = {
+    browserInteractionMode: () => "automatic",
+    descriptorSnapshot: () => snapshot,
+    beginTurn: (...args) => {
+      calls.push(args);
+      return {
+        surfaceId,
+        tabId: "tab-remote",
+        reused: false,
+        connectorBound: false,
+      };
+    },
+  };
+  const server = await new BrowserControlServer({
+    logger: { info() {}, warn() {}, error() {} },
+    getBrowserHost: () => host,
+    getPreferences: () => ({ showBrowserDuringTurns: false }),
+  }).start();
+  const descriptor = server.descriptor();
+  try {
+    const denied = await fetch(`${descriptor.endpoint}/v1/browser/descriptor`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    assert.equal(denied.status, 401);
+
+    const exposed = await fetch(`${descriptor.endpoint}/v1/browser/descriptor`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${descriptor.token}`,
+        "content-type": "application/json",
+      },
+      body: "{}",
+    });
+    assert.equal(exposed.status, 200);
+    assert.deepEqual(await exposed.json(), snapshot);
+
+    const start = await fetch(`${descriptor.endpoint}/v1/turn/start`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${descriptor.token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        phase: "start",
+        traceId: "remote123456",
+        helperPid: 4242,
+        remoteOwner: true,
+      }),
+    });
+    assert.equal(start.status, 200);
+    assert.deepEqual(calls, [[
+      "remote123456",
+      false,
+      4242,
+      undefined,
+      undefined,
+      false,
+      true,
+    ]]);
+  } finally {
+    await server.close();
+  }
+});
+
 test("browser control server withholds a new turn lease until its browser surface is ready", async () => {
   let releaseSurface;
   let reportBegin;

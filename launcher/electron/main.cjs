@@ -19,6 +19,7 @@ const {
 } = require("electron");
 const { BrowserHost, navigationErrorForLog } = require("./browser-host.cjs");
 const { BrowserControlServer } = require("./control-server.cjs");
+const { CURRENT_CONNECTOR_NAME } = require("./connector-identity.cjs");
 const { getAutostart, setAutostart } = require("./autostart.cjs");
 const {
   createLogger,
@@ -60,6 +61,8 @@ const KEYS_URL = "https://platform.openai.com/settings/organization/api-keys";
 const ALLOWED_EXTERNAL_URLS = new Set([GITHUB_URL, X_URL, CONNECTORS_URL, TUNNELS_URL, KEYS_URL]);
 const PACKAGED_RENDERER_URL = pathToFileURL(path.join(__dirname, "..", "dist", "index.html")).href;
 const APP_ICON_PATH = path.join(__dirname, "..", "assets", "icon.png");
+const REMOTE_BROWSER_HOST_ONLY = process.argv.includes("--remote-browser-host-only")
+  || process.env.CODEX_CHATGPT_WEB_REMOTE_BROWSER_HOST_ONLY === "1";
 
 const launchEnvironment = {
   CODEX_CHATGPT_WEB_HOME: process.env.CODEX_CHATGPT_WEB_HOME,
@@ -1015,6 +1018,14 @@ async function start() {
   await app.whenReady();
 
   const stateStore = createStateStore(path.join(app.getPath("userData"), "launcher-state.json"));
+  if (REMOTE_BROWSER_HOST_ONLY) {
+    stateStore.update({
+      language: stateStore.read().language || "en",
+      onboardingComplete: true,
+      autoStart: false,
+      browserInteractionMode: "automatic",
+    });
+  }
   if (IS_DEV_PROFILE && !stateStore.read().onboardingComplete) {
     stateStore.update({
       language: stateStore.read().language || "en",
@@ -1093,8 +1104,12 @@ async function start() {
     descriptorPath: BROWSER_DESCRIPTOR_PATH,
     cdpPort,
     control: browserControl.descriptor(),
-    cancelTurn: IS_DEV_PROFILE ? undefined : (traceId, reason) => runtimeSupervisor.cancelBrowserTurn(traceId, reason),
-    getConnectorName: () => runtimeHost.browserConnectorName(),
+    cancelTurn: IS_DEV_PROFILE || REMOTE_BROWSER_HOST_ONLY
+      ? undefined
+      : (traceId, reason) => runtimeSupervisor.cancelBrowserTurn(traceId, reason),
+    getConnectorName: () => REMOTE_BROWSER_HOST_ONLY
+      ? (process.env.CODEX_CHATGPT_WEB_REMOTE_CONNECTOR_NAME?.trim() || CURRENT_CONNECTOR_NAME)
+      : runtimeHost.browserConnectorName(),
     helper: { executable: process.execPath, script: BROWSER_HELPER_PATH },
     logger,
     loginWithPasskey: () => runtimeHost.capturePasskeyLogin(),
@@ -1169,6 +1184,14 @@ async function start() {
     await browserControl.close();
     mainWindow.destroy();
     app.quit();
+    return;
+  }
+  if (REMOTE_BROWSER_HOST_ONLY) {
+    logger.info("remote_browser_host.ready", {
+      cdpPort,
+      controlPort: browserControl.descriptor().endpoint,
+      descriptorPath: BROWSER_DESCRIPTOR_PATH,
+    });
     return;
   }
   if (IS_DEV_PROFILE) {
