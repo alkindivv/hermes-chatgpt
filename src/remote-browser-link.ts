@@ -17,7 +17,7 @@ import {
   type LauncherBrowserHostDescriptor,
 } from "./launcher-browser-host";
 
-const DEFAULT_REMOTE_DESCRIPTOR = "~/.codex-chatgpt-web/runtime/launcher-browser.json";
+export const DEFAULT_REMOTE_BROWSER_DESCRIPTOR = "~/.codex-chatgpt-web/runtime/launcher-browser.json";
 const CONNECT_TIMEOUT_MS = 15_000;
 
 export interface RemoteBrowserLinkOptions {
@@ -49,7 +49,7 @@ interface RemoteLauncherDescriptor {
   createdAt: string;
 }
 
-function assertSshTarget(value: string): string {
+export function assertRemoteBrowserSshTarget(value: string): string {
   const target = value.trim();
   if (!target || target.startsWith("-") || !/^[A-Za-z0-9_.@%:+-]+$/.test(target)) {
     throw new Error("SSH target must be a plain host or user@host value");
@@ -205,7 +205,7 @@ function privateWrite(path: string, body: string): void {
   if (process.platform !== "win32") chmodSync(path, 0o600);
 }
 
-function localDescriptorPath(configured?: string): string {
+export function remoteBrowserLocalDescriptorPath(configured?: string): string {
   if (!configured) return join(getConfigDir(), "runtime", "remote-launcher-browser.json");
   const expanded = expandUserPath(configured);
   if (!isAbsolute(expanded)) throw new Error("--local-descriptor must be an absolute path");
@@ -373,13 +373,13 @@ export function buildLocalRemoteDescriptor(
 }
 
 export async function connectRemoteBrowserLink(options: RemoteBrowserLinkOptions): Promise<void> {
-  const target = assertSshTarget(options.target);
+  const target = assertRemoteBrowserSshTarget(options.target);
   const sshExecutable = options.sshExecutable?.trim() || "ssh";
-  const remotePath = options.remoteDescriptorPath?.trim() || DEFAULT_REMOTE_DESCRIPTOR;
+  const remotePath = options.remoteDescriptorPath?.trim() || DEFAULT_REMOTE_BROWSER_DESCRIPTOR;
   if (!remotePath || /[\r\n\0]/.test(remotePath)) {
     throw new Error("Remote descriptor path is invalid");
   }
-  const destination = localDescriptorPath(options.localDescriptorPath);
+  const destination = remoteBrowserLocalDescriptorPath(options.localDescriptorPath);
   const helperScript = browserHelperScript(options.browserHelperScriptPath);
   const remote = fetchRemoteDescriptor(sshExecutable, target, remotePath);
   const remoteOwner = fetchRemoteDescriptorOwner(sshExecutable, target, remotePath);
@@ -390,6 +390,8 @@ export async function connectRemoteBrowserLink(options: RemoteBrowserLinkOptions
   const tunnel = spawn(sshExecutable, [
     "-N",
     "-T",
+    "-o", "BatchMode=yes",
+    "-o", "ConnectTimeout=15",
     "-o", "ExitOnForwardFailure=yes",
     "-o", "ServerAliveInterval=30",
     "-o", "ServerAliveCountMax=3",

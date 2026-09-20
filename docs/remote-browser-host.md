@@ -103,6 +103,34 @@ The local descriptor defaults to:
 
 Keep the command running while Codex uses the remote browser.
 
+### macOS LaunchAgent
+
+After the foreground link has been verified once, macOS can own it permanently through launchd.
+Stop the foreground `remote-browser connect` process first, then install the LaunchAgent:
+
+```bash
+codex-chatgpt-web remote-browser service install user@your-vps \
+  --remote-descriptor /home/ubuntu/.codex-chatgpt-web/runtime/launcher-browser.json \
+  --local-descriptor "$HOME/.codex-chatgpt-web/runtime/remote-launcher-browser.json"
+```
+
+The service uses `RunAtLoad` and `KeepAlive`, runs SSH in non-interactive BatchMode, recreates the
+ephemeral local descriptor after login/reboot, and automatically restarts after a transient SSH
+failure. The SSH account must therefore authenticate without a password prompt.
+
+Lifecycle commands:
+
+```bash
+codex-chatgpt-web remote-browser service status
+codex-chatgpt-web remote-browser service restart
+codex-chatgpt-web remote-browser service stop
+codex-chatgpt-web remote-browser service start
+codex-chatgpt-web remote-browser service uninstall
+```
+
+Logs are stored under `~/.codex-chatgpt-web/logs/remote-browser.stdout.log` and
+`remote-browser.stderr.log`.
+
 Optional paths:
 
 ```bash

@@ -31,6 +31,14 @@ import { getTunnelServiceStatus, restartTunnelService, startTunnelService, stopT
 import { VERSION } from "./version";
 import { runDevCommand } from "./dev-chat/cli";
 import { connectRemoteBrowserLink } from "./remote-browser-link";
+import {
+  getRemoteBrowserServiceStatus,
+  installRemoteBrowserService,
+  restartRemoteBrowserService,
+  startRemoteBrowserService,
+  stopRemoteBrowserService,
+  uninstallRemoteBrowserService,
+} from "./remote-browser-service";
 import { runHermesCommand } from "./hermes/cli";
 
 const HELP = `codex-chatgpt-web ${VERSION}
@@ -46,6 +54,7 @@ Usage:
   codex-chatgpt-web subagents <status|compatibility-v1|native>
   codex-chatgpt-web browser check
   codex-chatgpt-web remote-browser connect SSH_TARGET [options]
+  codex-chatgpt-web remote-browser service <status|install|start|restart|stop|uninstall> [SSH_TARGET] [options]
   codex-chatgpt-web hermes setup --browser-host-descriptor PATH --tunnel-id ID <--runtime-key-file PATH|--runtime-key-env NAME> --acknowledge-unofficial
   codex-chatgpt-web hermes serve
   codex-chatgpt-web hermes status
@@ -386,21 +395,54 @@ async function setupCommand(args: string[]): Promise<void> {
 
 async function remoteBrowserCommand(args: string[]): Promise<void> {
   const action = args.shift();
-  if (action !== "connect") {
-    throw new Error("Remote browser command must be: remote-browser connect SSH_TARGET");
+  if (action === "connect") {
+    const target = args.shift();
+    if (!target) throw new Error("remote-browser connect requires SSH_TARGET");
+    const remoteDescriptorPath = takeOption(args, "--remote-descriptor");
+    const localDescriptorPath = takeOption(args, "--local-descriptor");
+    const browserHelperScriptPath = takeOption(args, "--browser-helper-script");
+    assertNoArgs(args);
+    await connectRemoteBrowserLink({
+      target,
+      ...(remoteDescriptorPath ? { remoteDescriptorPath } : {}),
+      ...(localDescriptorPath ? { localDescriptorPath } : {}),
+      ...(browserHelperScriptPath ? { browserHelperScriptPath } : {}),
+    });
+    return;
   }
-  const target = args.shift();
-  if (!target) throw new Error("remote-browser connect requires SSH_TARGET");
-  const remoteDescriptorPath = takeOption(args, "--remote-descriptor");
-  const localDescriptorPath = takeOption(args, "--local-descriptor");
-  const browserHelperScriptPath = takeOption(args, "--browser-helper-script");
+  if (action !== "service") {
+    throw new Error(
+      "Remote browser command must be: remote-browser connect SSH_TARGET or remote-browser service <action>",
+    );
+  }
+
+  const serviceAction = args.shift() ?? "status";
+  if (serviceAction === "install") {
+    const target = args.shift();
+    if (!target) throw new Error("remote-browser service install requires SSH_TARGET");
+    const remoteDescriptorPath = takeOption(args, "--remote-descriptor");
+    const localDescriptorPath = takeOption(args, "--local-descriptor");
+    const browserHelperScriptPath = takeOption(args, "--browser-helper-script");
+    assertNoArgs(args);
+    const status = installRemoteBrowserService({
+      target,
+      ...(remoteDescriptorPath ? { remoteDescriptorPath } : {}),
+      ...(localDescriptorPath ? { localDescriptorPath } : {}),
+      ...(browserHelperScriptPath ? { browserHelperScriptPath } : {}),
+    });
+    stdout.write(`${JSON.stringify(status, null, 2)}\n`);
+    return;
+  }
+
   assertNoArgs(args);
-  await connectRemoteBrowserLink({
-    target,
-    ...(remoteDescriptorPath ? { remoteDescriptorPath } : {}),
-    ...(localDescriptorPath ? { localDescriptorPath } : {}),
-    ...(browserHelperScriptPath ? { browserHelperScriptPath } : {}),
-  });
+  const status = serviceAction === "status" ? getRemoteBrowserServiceStatus()
+    : serviceAction === "start" ? startRemoteBrowserService()
+      : serviceAction === "restart" ? await restartRemoteBrowserService()
+        : serviceAction === "stop" ? await stopRemoteBrowserService()
+          : serviceAction === "uninstall" ? await uninstallRemoteBrowserService()
+            : undefined;
+  if (!status) throw new Error(`Unknown remote browser service action: ${serviceAction}`);
+  stdout.write(`${JSON.stringify(status, null, 2)}\n`);
 }
 
 async function doctorCommand(args: string[]): Promise<void> {
@@ -574,6 +616,9 @@ async function uninstallCommand(args: string[]): Promise<void> {
     && config.browserHostRemote !== true
     && launcherControl;
   if (config && process.platform === "darwin" && !launcherRuntimeStopped) await assertServiceIdle(config);
+  if (process.platform === "darwin" && getRemoteBrowserServiceStatus().installed) {
+    await uninstallRemoteBrowserService();
+  }
   if (config?.mode === "full" && !launcherRuntimeStopped) {
     if (process.platform === "darwin") await uninstallTunnelService();
     stopTunnel(config);
