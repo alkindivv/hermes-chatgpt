@@ -42,7 +42,10 @@ const HIDDEN_TURN_VIEWPORT = Object.freeze({ width: 800, height: 600 });
 // whose helper disappeared without delivering the normal /v1/turn/end event.
 const TURN_HEARTBEAT_SWEEP_MS = 5_000;
 const TURN_HEARTBEAT_TIMEOUT_MS = 60_000;
-const TURN_TAB_BOOTSTRAP_TIMEOUT_MS = 120_000;
+// Must exceed the browser worker's 150s Temporary Chat preparation budget. Remote CDP
+// can spend most of a minute loading ChatGPT before the composer hydrates; reaping the native
+// surface at 120s races a still-live helper and turns a recoverable slow load into a dead tab.
+const TURN_TAB_BOOTSTRAP_TIMEOUT_MS = 210_000;
 const RETAINED_TURN_TAB_TTL_MS = 30 * 60 * 1000;
 const BROWSER_NAVIGATION_TIMEOUT_MS = 60_000;
 const CHATGPT_AUTH_SESSION_TIMEOUT_MS = 5_000;

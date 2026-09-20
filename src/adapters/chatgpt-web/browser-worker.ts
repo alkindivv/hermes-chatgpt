@@ -2539,6 +2539,7 @@ export class ChatGptBrowserWorker {
   private async prepareTemporaryChatSurface(
     page: Page,
     captureDiagnostic?: (checkpoint: string) => Promise<void>,
+    abortSignal?: AbortSignal,
   ): Promise<Locator> {
     // Launcher verification refreshes its owned page before attaching Playwright so a newly added
     // connector is present in the catalog. Navigating again here destroys that freshly hydrated
@@ -2553,9 +2554,12 @@ export class ChatGptBrowserWorker {
     }
     let composer: Locator;
     try {
-      composer = await this.activeComposer(page);
-    } catch {
-      throw new Error("ChatGPT web login is expired or the Temporary Chat surface is unavailable");
+      composer = await this.activeComposer(page, 30_000, abortSignal);
+    } catch (error) {
+      throw new Error(
+        "ChatGPT web login is expired or the Temporary Chat surface is unavailable",
+        { cause: error },
+      );
     }
     if (await dismissChatGptTemporaryChatOnboarding(page)) {
       await captureDiagnostic?.("temporary-chat-onboarding-dismissed");
@@ -4631,10 +4635,39 @@ export class ChatGptBrowserWorker {
           turn.traceId,
           "temporary_chat_preparation",
           browserStageTimeouts.temporaryChatPreparation,
-          () => this.prepareTemporaryChatSurface(
-            page,
-            checkpoint => diagnostics.capture(page, checkpoint),
-          ),
+          async (stageSignal) => {
+            const capturePreparation = (checkpoint: string): Promise<void> => diagnostics.capture(page, checkpoint);
+            try {
+              await this.prepareTemporaryChatSurface(page, capturePreparation, stageSignal);
+            } catch (error) {
+              if (!launcherObservationRecovery || stageSignal.aborted) throw error;
+              await diagnostics.capture(page, "temporary-chat-preparation-rebind", error);
+
+              const previousConnection = turnConnection;
+              const rebound = await connectAfterClosingBrowserConnection(
+                previousConnection,
+                async () => {
+                  turnConnection = undefined;
+                  return await connectLauncherBrowserHost(
+                    this.config.browserHostDescriptorPath!,
+                    browserStageTimeouts.browserPage,
+                    launcherSurfaceId,
+                    stageSignal,
+                  );
+                },
+              );
+              turnConnection = rebound.browser;
+              page = rebound.page;
+              diagnosticPage = page;
+              await waitForOperationalChatGptViewport(page, stageSignal);
+              await diagnostics.capture(page, "temporary-chat-page-rebound");
+              await this.prepareTemporaryChatSurface(
+                page,
+                checkpoint => diagnostics.capture(page, checkpoint),
+                stageSignal,
+              );
+            }
+          },
         );
       }
       // A retained lease proves the connector binding, not the current model selection.
@@ -4792,11 +4825,12 @@ export class ChatGptBrowserWorker {
             turn.traceId,
             "connector_catalog_refresh",
             browserStageTimeouts.temporaryChatPreparation,
-            async () => {
+            async (stageSignal) => {
               await page.reload({ waitUntil: "domcontentloaded", timeout: 60_000 });
               await this.prepareTemporaryChatSurface(
                 page,
                 checkpoint => diagnostics.capture(page, checkpoint),
+                stageSignal,
               );
               mode = await this.selectModelAndEffort(
                 page,
