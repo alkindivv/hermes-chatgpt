@@ -3069,14 +3069,43 @@ export class ChatGptBrowserWorker {
         timeout: Math.max(1, Math.min(CHATGPT_CONNECTOR_ACTION_TIMEOUT_MS, deadline - Date.now())),
       });
       await waitForChatGptPersonalizationPoll(CHATGPT_UI_SETTLE_MS, signal);
-      const settledComposer = await this.activeComposer(page, Math.max(1, deadline - Date.now()), signal);
-      const remainingMs = Math.max(1, deadline - Date.now());
-      const remainingText = await settledComposer.evaluate(
+      let settledComposer = await this.activeComposer(page, Math.max(1, deadline - Date.now()), signal);
+      let remainingMs = Math.max(1, deadline - Date.now());
+      let remainingText = await settledComposer.evaluate(
         element => element.textContent?.trim() ?? "",
         undefined,
         { timeout: remainingMs, signal },
       );
-      const connectorSelected = await this.connectorIsSelected(settledComposer, signal);
+      let connectorSelected = await this.connectorIsSelected(settledComposer, signal);
+
+      // Current ChatGPT can keep an atomic connector token selected even after Cmd/Ctrl+A +
+      // Backspace empties the Lexical text. When the draft is already empty, delete the atomic
+      // token from the editor boundary explicitly instead of treating that UI normalization as a
+      // persistent dirty composer.
+      if (remainingText.length === 0 && connectorSelected) {
+        await settledComposer.focus({
+          signal,
+          timeout: Math.max(1, Math.min(CHATGPT_CONNECTOR_ACTION_TIMEOUT_MS, deadline - Date.now())),
+        });
+        await settledComposer.press(CHATGPT_COMPOSER_DOCUMENT_END_KEY, {
+          signal,
+          timeout: Math.max(1, Math.min(CHATGPT_CONNECTOR_ACTION_TIMEOUT_MS, deadline - Date.now())),
+        });
+        await settledComposer.press("Backspace", {
+          signal,
+          timeout: Math.max(1, Math.min(CHATGPT_CONNECTOR_ACTION_TIMEOUT_MS, deadline - Date.now())),
+        });
+        await waitForChatGptPersonalizationPoll(CHATGPT_UI_SETTLE_MS, signal);
+        settledComposer = await this.activeComposer(page, Math.max(1, deadline - Date.now()), signal);
+        remainingMs = Math.max(1, deadline - Date.now());
+        remainingText = await settledComposer.evaluate(
+          element => element.textContent?.trim() ?? "",
+          undefined,
+          { timeout: remainingMs, signal },
+        );
+        connectorSelected = await this.connectorIsSelected(settledComposer, signal);
+      }
+
       if (remainingText.length > 0 || connectorSelected) {
         throw new Error(
           `ChatGPT connector cleanup did not produce an empty composer`

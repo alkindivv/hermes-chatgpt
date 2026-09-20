@@ -2069,6 +2069,52 @@ test("connector cleanup uses native editor deletion when contenteditable fill wo
   expect(composerText).toBe("");
 });
 
+test("connector cleanup explicitly deletes an atomic selected connector after text is empty", async () => {
+  let connectorSelected = true;
+  let selectedAll = false;
+  let atDocumentEnd = false;
+  const pressed: string[] = [];
+  const composer = {
+    focus: async () => {},
+    press: async (key: string) => {
+      pressed.push(key);
+      if (key === CHATGPT_COMPOSER_SELECT_ALL_KEY) {
+        selectedAll = true;
+        return;
+      }
+      if (key === CHATGPT_COMPOSER_DOCUMENT_END_KEY) {
+        atDocumentEnd = true;
+        return;
+      }
+      expect(key).toBe("Backspace");
+      if (atDocumentEnd) connectorSelected = false;
+      selectedAll = false;
+    },
+    evaluate: async () => "",
+  };
+  const clearChatGptComposerState = (ChatGptBrowserWorker.prototype as unknown as {
+    clearChatGptComposerState(page: unknown): Promise<void>;
+  }).clearChatGptComposerState;
+
+  await clearChatGptComposerState.call({
+    activeComposer: async () => composer,
+    connectorIsSelected: async () => connectorSelected,
+  }, {
+    locator: (selector: string) => {
+      expect(selector).toBe("body");
+      return { press: async (key: string) => { expect(key).toBe("Escape"); } };
+    },
+  });
+
+  expect(connectorSelected).toBeFalse();
+  expect(pressed).toEqual([
+    CHATGPT_COMPOSER_SELECT_ALL_KEY,
+    "Backspace",
+    CHATGPT_COMPOSER_DOCUMENT_END_KEY,
+    "Backspace",
+  ]);
+});
+
 test("an abort after connector activation removes the selected pill before returning", async () => {
   const controller = new AbortController();
   let composerText = "";
