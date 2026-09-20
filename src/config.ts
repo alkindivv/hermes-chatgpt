@@ -64,6 +64,8 @@ export interface TunnelConfig {
 
 export interface AppConfig {
   version: 3;
+  /** Only the isolated Hermes CLI sets this; native Codex configuration leaves it absent. */
+  runtimeBackend?: "hermes";
   purpose?: "dev-harness";
   releaseVersion: string;
   mode: RuntimeMode;
@@ -369,7 +371,7 @@ export function loadConfigForSetup(): AppConfig {
   return parseConfig(raw, path);
 }
 
-function parseConfig(value: unknown, path: string): AppConfig {
+export function parseConfig(value: unknown, path: string): AppConfig {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`Invalid configuration object in ${path}`);
   const parsed = value as Partial<AppConfig>;
   if (parsed.version !== 3) throw new Error(`Unsupported configuration version in ${path}; rerun setup to migrate it`);

@@ -1,4 +1,8 @@
+import type { HermesTurnContext } from "./hermes/request";
+
 export interface CodexParsedRequest {
+  /** Internal provenance attached by the authenticated Hermes endpoint, never parsed from request JSON. */
+  _hermes?: HermesTurnContext;
   modelId: string;
   previousResponseId?: string;
   context: CodexContext;

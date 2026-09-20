@@ -30,6 +30,8 @@ export function chatGptConversationKey(
   parsed: CodexParsedRequest,
   namespace: string,
 ): string | undefined {
+  // Hermes owns compression and canonical history; never reuse hidden state across completed user turns.
+  if (parsed._hermes) return undefined;
   const identity = extractChatGptTurnIdentity(parsed);
   if (!identity.threadId) return undefined;
   const raw = parsed._rawBody as { input?: unknown[] } | undefined;

@@ -126,7 +126,11 @@ export const CHATGPT_COMPLETION_ACTION_GRACE_MS = 60_000;
 export const CHATGPT_COMPLETION_SETTLE_MS = 2_000;
 export const CHATGPT_TOOL_CONFIRMATION_TIMEOUT_MS = 60_000;
 export const MAX_CHATGPT_CONNECTOR_TRIGGER_ATTEMPTS = 3;
-const CHATGPT_CONNECTOR_MENTION_QUERY = "@codex";
+export function chatGptConnectorMentionQuery(appName: string): string {
+  const word = appName.trim().split(/\s+/)[0];
+  if (!/^[A-Za-z][A-Za-z0-9_-]*$/.test(word)) throw new Error("Connector name must begin with a searchable word");
+  return `@${word.toLowerCase()}`;
+}
 const CHATGPT_CONNECTOR_ACTION_TIMEOUT_MS = 10_000;
 const CHATGPT_SMOKE_TEXT = "Reply with exactly: CODEX WEB GPT READY";
 const CHATGPT_SMOKE_EXPECTED = "CODEX WEB GPT READY";
@@ -3095,6 +3099,7 @@ export class ChatGptBrowserWorker {
       throwIfPromptAttachmentAborted(abortSignal);
     };
     let composer: Locator;
+    const CHATGPT_CONNECTOR_MENTION_QUERY = chatGptConnectorMentionQuery(this.config.appName);
     const menuRows = page.locator('.__menu-item[tabindex="0"]');
     const appResult = menuRows.filter({
       has: page.getByText(this.config.appName, { exact: true }),

@@ -5,6 +5,7 @@ import type { CodexContentPart, CodexParsedRequest, CodexTool } from "../../type
 import { isAcceptedCompactionContinuation } from "./compaction-continuation";
 
 export type ChatGptSandboxPolicy =
+  | { type: "external"; executor: "hermes" }
   | { type: "dangerFullAccess" }
   | { type: "readOnly"; networkAccess: boolean }
   | { type: "workspaceWrite"; writableRoots: string[]; networkAccess: boolean };
@@ -191,6 +192,7 @@ function isTurnAbortedNotice(value: Record<string, unknown>): boolean {
 
 /** Native turn ids that Codex has authoritatively marked as interrupted in this thread. */
 export function priorChatGptAbortedTurnIds(parsed: CodexParsedRequest): string[] {
+  if (parsed._hermes) return [];
   const currentTurnId = extractChatGptTurnIdentity(parsed).turnId;
   if (!currentTurnId) return [];
   const body = record(parsed._rawBody);
@@ -217,6 +219,7 @@ export function priorChatGptAbortedTurnIds(parsed: CodexParsedRequest): string[]
  * under the same logical task revision.
  */
 export function extractChatGptTurnUserRevision(parsed: CodexParsedRequest): unknown {
+  if (parsed._hermes) return parsed._hermes.revisions.at(-1)!.content;
   const identity = extractChatGptTurnIdentity(parsed);
   const turnId = identity.turnId;
   if (!turnId) throw new Error("ChatGPT web requires native Codex turn_id metadata for browser-session replay");
@@ -259,6 +262,7 @@ function userRevision(value: unknown, expectedTurnId?: string, metadata?: Record
 
 /** Canonical instruction order distinguishes new steering from a delayed older request. */
 export function chatGptTurnUserRevisionHistory(parsed: CodexParsedRequest): ChatGptTurnUserRevision[] {
+  if (parsed._hermes) return parsed._hermes.revisions;
   const body = record(parsed._rawBody);
   const turnId = extractChatGptTurnIdentity(parsed).turnId;
   const metadata = clientTurnMetadata(parsed);
@@ -738,6 +742,7 @@ function parseChatGptEnvironmentText(parsed: CodexParsedRequest, text: string): 
 }
 
 export function extractChatGptTurnIdentity(parsed: CodexParsedRequest): ChatGptTurnIdentity {
+  if (parsed._hermes) return parsed._hermes.identity;
   const body = record(parsed._rawBody);
   return {
     ...extractCodexTurnIdentityFromBody(body),

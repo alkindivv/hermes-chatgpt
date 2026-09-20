@@ -31,6 +31,7 @@ import { getTunnelServiceStatus, restartTunnelService, startTunnelService, stopT
 import { VERSION } from "./version";
 import { runDevCommand } from "./dev-chat/cli";
 import { connectRemoteBrowserLink } from "./remote-browser-link";
+import { runHermesCommand } from "./hermes/cli";
 
 const HELP = `codex-chatgpt-web ${VERSION}
 
@@ -45,6 +46,10 @@ Usage:
   codex-chatgpt-web subagents <status|compatibility-v1|native>
   codex-chatgpt-web browser check
   codex-chatgpt-web remote-browser connect SSH_TARGET [options]
+  codex-chatgpt-web hermes setup --browser-host-descriptor PATH --tunnel-id ID --runtime-key-file PATH --acknowledge-unofficial
+  codex-chatgpt-web hermes serve
+  codex-chatgpt-web hermes status
+  codex-chatgpt-web hermes tunnel <start|stop|status>
   codex-chatgpt-web dev launcher
   codex-chatgpt-web dev status [--json]
   codex-chatgpt-web dev setup <--browser-only|--full> [options]
@@ -597,6 +602,7 @@ async function main(): Promise<void> {
   }
   if (command === "help") stdout.write(HELP);
   else if (command === "setup") await setupCommand(args);
+  else if (command === "hermes") await runHermesCommand(args, home);
   else if (command === "login") await loginCommand(args);
   else if (command === "doctor" || command === "status") await doctorCommand(args);
   else if (command === "route") await routeCommand(args);

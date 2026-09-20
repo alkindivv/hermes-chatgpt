@@ -17,3 +17,6 @@ launcher/artifacts/
 .playwright-cli/
 output/
 notes.md
+.venv-hermes-test/
+__pycache__/
+*.pyc

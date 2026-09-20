@@ -1,0 +1,5 @@
+name: hermes-chatgpt
+kind: model-provider
+version: "0.1.0"
+description: ChatGPT Web browser backend preserving the native Hermes agent loop.
+author: alkindivv

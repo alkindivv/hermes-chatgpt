@@ -223,6 +223,7 @@ export function mcpCommand(config: AppConfig, platform = process.platform): stri
   const command = [
     ...config.runtimeCommand,
     "mcp",
+    ...(config.runtimeBackend === "hermes" ? ["--backend", "hermes"] : []),
     "--contract",
     contract,
     "--broker-socket",

@@ -122,7 +122,8 @@ function sameAuthority(left: ChatGptTurnEnvironment, right: ChatGptTurnEnvironme
     const expected = new Set(b.map(pathIdentity));
     return a.length === expected.size && a.every(path => expected.has(pathIdentity(path)));
   };
-  return pathIdentity(left.cwd) === pathIdentity(right.cwd)
+  return left.sandboxPolicy.type !== "external" && right.sandboxPolicy.type !== "external"
+    && pathIdentity(left.cwd) === pathIdentity(right.cwd)
     && samePaths(left.roots, right.roots)
     && samePaths(left.writableRoots, right.writableRoots)
     && left.sandboxPolicy.type === right.sandboxPolicy.type
