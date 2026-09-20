@@ -46,15 +46,20 @@ def main() -> None:
         PooledCredential,
         load_pool,
     )
+    from providers import get_provider_profile
 
     token = _read_private_token(key_file)
+    profile = get_provider_profile(args.provider)
+    if profile is None or not str(getattr(profile, "base_url", "") or "").strip():
+        raise SystemExit(f"Provider {args.provider!r} has no configured base URL")
+    base_url = str(profile.base_url).strip().rstrip("/")
     pool = load_pool(args.provider)
 
-    while True:
-        index, _entry, error = pool.resolve_target(args.label)
-        if error or index is None:
-            break
-        pool.remove_index(index)
+    # This provider is dedicated to one local bridge instance. Remove any
+    # env-seeded or stale rows first so rotation cannot leave an old token ahead
+    # of the current owner-only file in fill_first selection.
+    while pool.entries():
+        pool.remove_index(1)
 
     pool.add_entry(PooledCredential(
         provider=args.provider,
@@ -64,6 +69,7 @@ def main() -> None:
         priority=0,
         source="manual:hermes-chatgpt-file",
         access_token=token,
+        base_url=base_url,
     ))
     print(f"Credential installed for {args.provider} in {home} (token not printed).")
 
