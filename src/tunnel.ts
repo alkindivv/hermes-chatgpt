@@ -362,15 +362,53 @@ export function parseTunnelStatus(output: string, alias: string, exitStatus = 0)
   }
   try {
     const parsed = JSON.parse(output) as Record<string, unknown>;
-    if (!Array.isArray(parsed.entries)) throw new Error("local inventory has no entries array");
+
+    // `runtimes status <alias>` also recognizes a profile started directly by the
+    // macOS launchd service. In that ownership mode tunnel-client can report
+    // process_running=false for the managed tmux/runtime metadata even though the
+    // profile's live healthz and readyz probes are both green.
+    if (!Array.isArray(parsed.entries)) {
+      if (parsed.alias !== alias) throw new Error("runtime status does not match the requested alias");
+      const healthy = parsed.healthy === true;
+      const ready = parsed.ready === true;
+      const local = nestedRecord(parsed, "local");
+      const effectiveHealth = nestedRecord(local, "effective_health");
+      const healthz = nestedRecord(effectiveHealth, "healthz");
+      const readyz = nestedRecord(effectiveHealth, "readyz");
+      const liveHealth = healthz?.ok === true;
+      const liveReady = readyz?.ok === true;
+      const processRunning = parsed.process_running === true || liveHealth;
+      const effectiveHealthy = healthy && liveHealth;
+      const effectiveReady = ready && liveReady;
+      const state = effectiveReady ? "ready"
+        : effectiveHealthy ? "healthy"
+          : processRunning ? "starting"
+            : "stopped";
+      const ok = processRunning && effectiveHealthy && effectiveReady;
+      const detail = ok
+        ? "process_running=true healthy=true ready=true"
+        : safeTunnelDetail([
+          `process_running=${processRunning}`,
+          `healthy=${effectiveHealthy}`,
+          `ready=${effectiveReady}`,
+          `state=${state}`,
+        ].join("; "));
+      return {
+        ok,
+        processRunning,
+        healthy: effectiveHealthy,
+        ready: effectiveReady,
+        state,
+        detail,
+      };
+    }
+
     const matches = parsed.entries.filter(entry => entry?.alias === alias);
     if (matches.length > 1) throw new Error("local inventory contains duplicate aliases");
     const state = matches.length === 0 ? "stopped" : matches[0].runtime_state;
     if (!["stopped", "starting", "healthy", "ready"].includes(state)) {
       throw new Error("local inventory has an unsupported runtime state");
     }
-    // tunnel-client 0.0.12 derives these states from the live process and local healthz/readyz
-    // probes. It does not need the optional remote control-plane lookup made by `status`.
     const processRunning = state !== "stopped";
     const healthy = state === "healthy" || state === "ready";
     const ready = state === "ready";
@@ -397,7 +435,7 @@ export function tunnelStatus(config: AppConfig): TunnelRuntimeStatus {
   }
   const result = runCommand(
     settings.binaryPath,
-    ["runtimes", "cleanup", "--json"],
+    ["runtimes", "status", settings.alias, "--json"],
     { timeout: 10_000 },
   );
   return parseTunnelStatus(tunnelCommandOutput(result), settings.alias, result.status);

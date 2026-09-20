@@ -30,6 +30,48 @@ describe("tunnel status boundary", () => {
     }
   });
 
+  test("accepts a launchd-owned profile when live healthz and readyz are green", () => {
+    expect(parseTunnelStatus(JSON.stringify({
+      alias: "ours",
+      healthy: true,
+      ready: true,
+      process_running: false,
+      runtime_state: "stopped",
+      local: {
+        effective_health: {
+          healthz: { ok: true },
+          readyz: { ok: true },
+        },
+      },
+    }), "ours")).toEqual({
+      ok: true,
+      processRunning: true,
+      healthy: true,
+      ready: true,
+      state: "ready",
+      detail: "process_running=true healthy=true ready=true",
+    });
+
+    expect(parseTunnelStatus(JSON.stringify({
+      alias: "ours",
+      healthy: true,
+      ready: true,
+      process_running: false,
+      local: {
+        effective_health: {
+          healthz: { ok: false },
+          readyz: { ok: false },
+        },
+      },
+    }), "ours")).toMatchObject({
+      ok: false,
+      processRunning: false,
+      healthy: false,
+      ready: false,
+      state: "stopped",
+    });
+  });
+
   test("redacts tunnel ids and keys from safe diagnostics", () => {
     const result = parseTunnelStatus(
       "failed tunnel_0123456789abcdef0123456789abcdef with sk-secretsecretsecret",
