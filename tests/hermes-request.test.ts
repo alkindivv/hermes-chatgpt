@@ -69,6 +69,78 @@ describe("Hermes request boundary", () => {
     expect(() => parseHermesRequest({ ...plain, tools: [tool] }, "n")).toThrow("session");
   });
 
+  test("sequential Hermes tool_call_id reuse is remapped without changing first-call identity", () => {
+    const parsed = parseHermesRequest(request([
+      { role: "user", content: "Read twice" },
+      { role: "assistant", content: null, tool_calls: [{
+        id: "call_reused",
+        type: "function",
+        function: { name: "read_file", arguments: '{"path":"a.txt"}' },
+      }] },
+      { role: "tool", tool_call_id: "call_reused", content: "FIRST" },
+      { role: "assistant", content: null, tool_calls: [{
+        id: "call_reused",
+        type: "function",
+        function: { name: "read_file", arguments: '{"path":"b.txt"}' },
+      }] },
+      { role: "tool", tool_call_id: "call_reused", content: "SECOND" },
+    ]), "n");
+
+    const calls = parsed.context.messages
+      .filter(message => message.role === "assistant")
+      .flatMap(message => Array.isArray(message.content)
+        ? message.content.filter(part => part.type === "toolCall")
+        : []);
+    const results = parsed.context.messages.filter(message => message.role === "toolResult");
+
+    expect(calls).toHaveLength(2);
+    expect(results).toHaveLength(2);
+    expect(calls[0]).toMatchObject({ id: "call_reused", name: "read_file" });
+    expect(results[0]).toMatchObject({ toolCallId: "call_reused", content: "FIRST" });
+    expect(calls[1]?.id).toMatch(/^call_hermes_[a-f0-9]{32}$/);
+    expect(calls[1]?.id).not.toBe("call_reused");
+    expect(results[1]).toMatchObject({ toolCallId: calls[1]?.id, content: "SECOND" });
+
+    const again = parseHermesRequest(request([
+      { role: "user", content: "Read twice" },
+      { role: "assistant", content: null, tool_calls: [{
+        id: "call_reused",
+        type: "function",
+        function: { name: "read_file", arguments: '{"path":"a.txt"}' },
+      }] },
+      { role: "tool", tool_call_id: "call_reused", content: "FIRST" },
+      { role: "assistant", content: null, tool_calls: [{
+        id: "call_reused",
+        type: "function",
+        function: { name: "read_file", arguments: '{"path":"b.txt"}' },
+      }] },
+      { role: "tool", tool_call_id: "call_reused", content: "SECOND" },
+    ]), "n");
+    const againCalls = again.context.messages
+      .filter(message => message.role === "assistant")
+      .flatMap(message => Array.isArray(message.content)
+        ? message.content.filter(part => part.type === "toolCall")
+        : []);
+    expect(againCalls[1]?.id).toBe(calls[1]?.id);
+  });
+
+  test("overlapping duplicate Hermes tool_call_ids remain invalid", () => {
+    expect(() => parseHermesRequest(request([
+      { role: "user", content: "x" },
+      { role: "assistant", content: null, tool_calls: [{
+        id: "call_overlap",
+        type: "function",
+        function: { name: "read_file", arguments: '{"path":"a.txt"}' },
+      }] },
+      { role: "assistant", content: null, tool_calls: [{
+        id: "call_overlap",
+        type: "function",
+        function: { name: "read_file", arguments: '{"path":"b.txt"}' },
+      }] },
+      { role: "tool", tool_call_id: "call_overlap", content: "ambiguous" },
+    ]), "n")).toThrow("overlapping duplicate");
+  });
+
   test("tool_choice none removes advertised execution capability", () => {
     const parsed = parseHermesRequest({ ...request(), tool_choice: "none" }, "n");
     expect(parsed.context.tools).toEqual([]);

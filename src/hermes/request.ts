@@ -74,15 +74,48 @@ export function parseHermesRequest(value: unknown, namespace: string): CodexPars
   const threadId = hash(["hermes", namespace, body.hermes?.profile_id ?? "default", body.hermes?.session_id ?? randomUUID()]);
   const input: Array<Record<string, unknown>> = [];
   const revisions: ChatGptTurnUserRevision[] = [];
-  const pending = new Set<string>();
-  const seen = new Set<string>();
+  // Hermes intentionally permits a provider to reuse a tool_call_id after the previous call
+  // has been answered. Some OpenAI-compatible backends emit one constant id for many sequential
+  // calls, and Hermes' own pre-call sanitizer uses outstanding-call semantics for that reason.
+  //
+  // Responses history is stricter/ambiguous if the same call_id is repeated, so preserve the first
+  // id exactly and deterministically remap only later completed-cycle reuses on the wire. The
+  // original Hermes ids remain in taskPrefix/revision hashing; this translation is transport-only.
+  const pending = new Map<string, string>();
+  const reuseCounts = new Map<string, number>();
+  const wireIds = new Set<string>();
+  const nextWireCallId = (original: string): string => {
+    const occurrence = (reuseCounts.get(original) ?? 0) + 1;
+    reuseCounts.set(original, occurrence);
+    if (occurrence === 1 && !wireIds.has(original)) {
+      wireIds.add(original);
+      return original;
+    }
+    let salt = occurrence;
+    for (;;) {
+      const candidate = `call_hermes_${hash([original, salt]).slice(0, 32)}`;
+      if (!wireIds.has(candidate)) {
+        wireIds.add(candidate);
+        return candidate;
+      }
+      salt += 1;
+    }
+  };
   // Use only human/task history for instruction lineage. Ephemeral system/budget layers do not create a new user turn.
   const taskPrefix: unknown[] = [];
   for (const m of body.messages) {
     if (m.role !== "assistant" && m.tool_calls?.length) throw new Error("Only assistant messages may contain tool_calls");
     if (m.role === "tool") {
-      if (!m.tool_call_id || !pending.delete(m.tool_call_id)) throw new Error("Hermes history contains an orphan or duplicate tool result");
-      input.push({ type: "function_call_output", call_id: m.tool_call_id, output: typeof m.content === "string" ? m.content : contentParts(m.content) });
+      const wireCallId = m.tool_call_id ? pending.get(m.tool_call_id) : undefined;
+      if (!m.tool_call_id || !wireCallId) {
+        throw new Error("Hermes history contains an orphan or duplicate tool result");
+      }
+      pending.delete(m.tool_call_id);
+      input.push({
+        type: "function_call_output",
+        call_id: wireCallId,
+        output: typeof m.content === "string" ? m.content : contentParts(m.content),
+      });
       taskPrefix.push({ role: "tool", call_id: m.tool_call_id, content: m.content });
       continue;
     }
@@ -102,13 +135,20 @@ export function parseHermesRequest(value: unknown, namespace: string): CodexPars
       const reasoning = m.reasoning_content ?? m.reasoning;
       if (reasoning) input.push({ type: "reasoning", summary: [{ type: "summary_text", text: reasoning }] });
       for (const call of m.tool_calls ?? []) {
-        if (seen.has(call.id)) throw new Error("Hermes history contains duplicate tool call IDs");
+        if (pending.has(call.id)) {
+          throw new Error("Hermes history contains overlapping duplicate tool call IDs");
+        }
         let args: unknown;
         try { args = JSON.parse(call.function.arguments); } catch { throw new Error("Hermes tool arguments are not valid JSON"); }
         if (!args || typeof args !== "object" || Array.isArray(args)) throw new Error("Hermes tool arguments must be a JSON object");
-        seen.add(call.id);
-        pending.add(call.id);
-        input.push({ type: "function_call", call_id: call.id, name: call.function.name, arguments: call.function.arguments });
+        const wireCallId = nextWireCallId(call.id);
+        pending.set(call.id, wireCallId);
+        input.push({
+          type: "function_call",
+          call_id: wireCallId,
+          name: call.function.name,
+          arguments: call.function.arguments,
+        });
         taskPrefix.push({ role: "call", ...call });
       }
     }
