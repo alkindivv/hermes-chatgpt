@@ -618,14 +618,14 @@ export async function setup(options: SetupOptions): Promise<SetupResult> {
       }
     } else {
       const needsOwnershipMigration = !tunnelService.installed || !tunnelService.loaded || !tunnelServiceDefinitionMatches(config);
-      if (needsOwnershipMigration || needsProfile) {
+      if (needsOwnershipMigration || needsProfile || refreshTunnelWorker || explicitTunnelChange) {
         await assertServiceIdle(config);
         if (tunnelService.loaded) await stopTunnelService();
+        // Re-run managed connect whenever the committed worker inputs change. Besides validating
+        // readiness, this rewrites the native profile YAML with the new tunnel id, runtime key,
+        // and MCP command before launchd starts the durable direct-profile service.
         await bootstrapTunnelProfile(config);
         installTunnelService(config);
-      } else if (refreshTunnelWorker) {
-        await assertServiceIdle(config);
-        await restartTunnelService();
       }
       const status = await waitForTunnelReady(config);
       if (!status.ok) throw new Error(`Tunnel runtime did not become healthy and ready: ${status.detail}`);
