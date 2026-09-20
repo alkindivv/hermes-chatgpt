@@ -1,12 +1,13 @@
 # Remote browser host
 
-Remote browser host mode moves only the Electron/ChatGPT browser process to a Linux VPS. Codex, the
-Responses bridge, MCP broker, project files, shell, Git, approvals, and tool execution remain on the
-Mac.
+Remote browser host mode moves the Electron/ChatGPT browser process and its Playwright browser
+helper to a Linux VPS. Codex, the Responses bridge, MCP broker, project files, shell, Git, approvals,
+and tool execution remain on the Mac.
 
 This mode is intended for a trusted VPS you control. It does not expose CDP or the launcher control
-server publicly: both continue to bind to `127.0.0.1` on the VPS and are carried to the Mac through
-SSH local forwarding.
+server publicly: both continue to bind to `127.0.0.1` on the VPS. SSH local forwarding keeps
+maintenance/setup access private, while automatic turns use an SSH stdio channel to a VPS-local
+browser helper.
 
 ## Architecture
 
@@ -16,14 +17,16 @@ Mac                                             VPS
 Codex / ChatGPT desktop                         Xvfb
 project files                                   Electron launcher
 shell / Git / local tools        SSH            ChatGPT browser session
-Responses daemon                  |             127.0.0.1:<cdp>
-MCP broker                        +----------->  127.0.0.1:<control>
-browser helper
-remote-browser link
+Responses daemon                  |             browser helper / Playwright
+MCP broker                        +----------->  127.0.0.1:<cdp>
+remote-browser link               +----------->  127.0.0.1:<control>
 ```
 
-The browser helper stays on the Mac. Only browser lifecycle, DOM automation, and CDP traffic cross
-the SSH link. The VPS does not need a copy of the project.
+The browser helper runs beside Electron on the VPS. The Mac daemon talks to that helper through an
+SSH stdio channel, while MCP/tool execution remains on the Mac. This keeps the high-volume,
+latency-sensitive Playwright/CDP protocol local to the browser host; only compact helper protocol
+frames, compiled prompt payloads, progress, and response deltas cross SSH. The VPS does not need a
+copy of the project and never executes Codex project tools.
 
 ## 1. Start the VPS browser host
 
@@ -79,12 +82,18 @@ codex-chatgpt-web remote-browser connect user@your-vps
 
 The command:
 
-1. reads the VPS launcher descriptor over SSH;
+1. reads the VPS launcher descriptor and its owning user over SSH;
 2. validates that CDP and control are loopback-only;
-3. creates two SSH local forwards;
-4. verifies CDP and the authenticated control endpoint;
-5. writes an owner-only local descriptor; and
-6. stays in the foreground to own the SSH link.
+3. creates two SSH local forwards for health, setup, and maintenance;
+4. records the launcher's VPS-local browser-helper command in the local descriptor;
+5. verifies CDP and the authenticated control endpoint;
+6. writes an owner-only local descriptor; and
+7. stays in the foreground to own the SSH link.
+
+Automatic Codex turns start a second, persistent SSH stdio channel for the browser helper. If the
+SSH login user differs from the launcher descriptor owner, the helper command switches to the owner
+with `runuser`. The SSH account therefore needs permission to become the launcher owner, or you
+should connect directly as that owner.
 
 The local descriptor defaults to:
 
@@ -100,14 +109,15 @@ Optional paths:
 codex-chatgpt-web remote-browser connect user@your-vps   --remote-descriptor '~/.codex-chatgpt-web/runtime/launcher-browser.json'   --local-descriptor "$HOME/.codex-chatgpt-web/runtime/remote-launcher-browser.json"
 ```
 
-If the runtime cannot discover its local browser helper, pass an absolute local path with
-`--browser-helper-script`.
+`--browser-helper-script` remains available only as a local compatibility fallback. Normal remote
+turns execute the helper advertised by the VPS launcher.
 
 ### Why the forwarded CDP port is not remapped
 
 Chromium's `/json/version` response advertises a WebSocket URL containing its actual debugging
-port. The link therefore forwards the VPS CDP port to the **same port number** on the Mac. This
-avoids rewriting CDP metadata and keeps Playwright's normal `connectOverCDP` path intact.
+port. The maintenance link therefore forwards the VPS CDP port to the **same port number** on the
+Mac. This avoids rewriting CDP metadata for health/setup operations. Real automatic turns keep
+Playwright/CDP local to the VPS helper instead of streaming DOM automation through this forward.
 
 If that port is already occupied on the Mac, stop the conflicting local listener and reconnect.
 
@@ -142,24 +152,24 @@ Mac owns:
 - MCP/tool execution
 - approvals
 - Responses daemon
+- browser-helper protocol coordination
 
 VPS owns:
 - Electron
 - ChatGPT browser profile
 - ChatGPT browser tabs
 - rendering
+- browser helper / Playwright
 - CDP/control endpoints
 ```
 
 ## Liveness and ownership
 
-A normal launcher uses the browser-helper PID as local process-liveness evidence. That PID is
-meaningless across machines, so remote turns explicitly identify themselves as remote owners.
-
-For remote automatic turns, the VPS uses the existing authenticated heartbeat lease instead of
-checking whether the Mac PID exists on Linux. Dynamic browser surface-to-CDP-target ownership is
-refreshed from the authenticated `/v1/browser/descriptor` control endpoint before Playwright
-attaches.
+A normal launcher uses the browser-helper PID as local process-liveness evidence. The Mac-side
+maintenance link still identifies itself as a remote owner because its PID is meaningless on Linux.
+Automatic browser turns instead run their helper on the VPS as the launcher descriptor owner, so the
+launcher uses the helper's real VPS PID and local heartbeat. Dynamic browser surface-to-CDP-target
+ownership stays local to the VPS helper.
 
 The local remote descriptor remains process-bound to the Mac-side link process. If the link exits,
 its descriptor is removed.

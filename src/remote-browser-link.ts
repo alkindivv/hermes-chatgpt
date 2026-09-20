@@ -71,6 +71,16 @@ function remoteDescriptorReadCommand(path: string): string {
   return `cat -- ${shellQuote(path)}`;
 }
 
+function remoteDescriptorOwnerCommand(path: string): string {
+  const resolved = path.startsWith("~/")
+    ? `"$HOME"/${shellQuote(path.slice(2))}`
+    : path.startsWith("/")
+      ? shellQuote(path)
+      : (() => { throw new Error("Remote descriptor path must be absolute or start with ~/"); })();
+  return `owner="$(stat -c %U -- ${resolved} 2>/dev/null || stat -f %Su -- ${resolved} 2>/dev/null)"`
+    + ` && printf "%s\\n" "$owner"`;
+}
+
 function loopbackPort(value: unknown, label: string): number {
   if (typeof value !== "string") throw new Error(`${label} is missing`);
   let parsed: URL;
@@ -222,6 +232,29 @@ function fetchRemoteDescriptor(
   return parseRemoteLauncherDescriptor(result.stdout);
 }
 
+function fetchRemoteDescriptorOwner(
+  sshExecutable: string,
+  target: string,
+  remoteDescriptorPath: string,
+): string {
+  const result = spawnSync(sshExecutable, [target, remoteDescriptorOwnerCommand(remoteDescriptorPath)], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    const detail = result.stderr.trim();
+    throw new Error(
+      `Could not determine launcher descriptor owner on ${target}: ${detail || `ssh exited ${result.status ?? 1}`}`,
+    );
+  }
+  const owner = result.stdout.trim();
+  if (!/^[A-Za-z_][A-Za-z0-9_.-]{0,63}$/.test(owner)) {
+    throw new Error("Remote launcher descriptor owner is invalid");
+  }
+  return owner;
+}
+
 function snapshotMatches(
   body: unknown,
   descriptor: RemoteLauncherDescriptor,
@@ -302,6 +335,12 @@ export function buildLocalRemoteDescriptor(
   remote: RemoteLauncherDescriptor,
   snapshot: RemoteLauncherDescriptor,
   helperScript: string,
+  remoteHelper?: {
+    sshExecutable: string;
+    target: string;
+    descriptorPath: string;
+    owner: string;
+  },
 ): LauncherBrowserHostDescriptor {
   return {
     version: 3,
@@ -314,6 +353,16 @@ export function buildLocalRemoteDescriptor(
     helper: {
       executable: process.execPath,
       script: helperScript,
+      ...(remoteHelper ? {
+        remote: {
+          sshExecutable: remoteHelper.sshExecutable,
+          target: remoteHelper.target,
+          descriptorPath: remoteHelper.descriptorPath,
+          owner: remoteHelper.owner,
+          executable: remote.helper.executable,
+          script: remote.helper.script,
+        },
+      } : {}),
     },
     partition: remote.partition,
     idleUrl: remote.idleUrl,
@@ -333,6 +382,7 @@ export async function connectRemoteBrowserLink(options: RemoteBrowserLinkOptions
   const destination = localDescriptorPath(options.localDescriptorPath);
   const helperScript = browserHelperScript(options.browserHelperScriptPath);
   const remote = fetchRemoteDescriptor(sshExecutable, target, remotePath);
+  const remoteOwner = fetchRemoteDescriptorOwner(sshExecutable, target, remotePath);
   const cdpPort = loopbackPort(remote.endpoint, "Remote launcher CDP endpoint");
   const controlPort = loopbackPort(remote.control.endpoint, "Remote launcher control endpoint");
   if (cdpPort === controlPort) throw new Error("Remote launcher reused one port for CDP and control");
@@ -372,12 +422,18 @@ export async function connectRemoteBrowserLink(options: RemoteBrowserLinkOptions
     } finally {
       tunnel.off("error", onStartupError);
     }
-    const local = buildLocalRemoteDescriptor(remote, snapshot, helperScript);
+    const local = buildLocalRemoteDescriptor(remote, snapshot, helperScript, {
+      sshExecutable,
+      target,
+      descriptorPath: remotePath,
+      owner: remoteOwner,
+    });
     privateWrite(destination, `${JSON.stringify(local, null, 2)}\n`);
     stdout.write(
       `Remote browser link ready.\nDescriptor: ${destination}\n`
       + `CDP: 127.0.0.1:${cdpPort} -> ${target}\n`
       + `Control: 127.0.0.1:${controlPort} -> ${target}\n`
+      + `Browser helper: SSH -> ${target} (runs as ${remoteOwner})\n`
       + "Keep this process running while Codex uses the remote browser.\n",
     );
 

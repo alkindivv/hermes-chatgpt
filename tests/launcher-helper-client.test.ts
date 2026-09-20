@@ -4,11 +4,68 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ChatGptCompactionHandoffAccepted, ChatGptWebAdapterError } from "../src/adapters/chatgpt-web/adapter-error";
-import { LauncherBrowserHelperClient } from "../src/adapters/chatgpt-web/launcher-helper-client";
+import {
+  LauncherBrowserHelperClient,
+  launcherBrowserHelperSpawnSpec,
+} from "../src/adapters/chatgpt-web/launcher-helper-client";
 import type { BrowserTurn, ResolvedBrowserConfig } from "../src/adapters/chatgpt-web/browser-worker";
 import { LAUNCHER_BROWSER_HOST_KIND, LAUNCHER_BROWSER_IDLE_URL } from "../src/launcher-browser-host";
 
 const roots: string[] = [];
+
+test("remote launcher helper runs beside Electron over SSH instead of tunneling Playwright CDP", () => {
+  const descriptor = {
+    version: 3,
+    kind: LAUNCHER_BROWSER_HOST_KIND,
+    profile: "production",
+    pid: process.pid,
+    remote: true,
+    endpoint: "http://127.0.0.1:39001",
+    control: {
+      endpoint: "http://127.0.0.1:39002",
+      token: "launcher-control-token-0123456789abcdefghijklmnop",
+    },
+    helper: {
+      executable: process.execPath,
+      script: "/local/browser-helper.cjs",
+      remote: {
+        sshExecutable: "/usr/bin/ssh",
+        target: "root@example.test",
+        descriptorPath: "/home/ubuntu/.codex-chatgpt-web/runtime/launcher-browser.json",
+        owner: "ubuntu",
+        executable: "/tmp/.mount_launcher/codex-web-gpt-launcher",
+        script: "/tmp/.mount_launcher/resources/runtime/app/browser-helper.cjs",
+      },
+    },
+    partition: "persist:codex-web-gpt-chatgpt",
+    idleUrl: LAUNCHER_BROWSER_IDLE_URL,
+    surfaceId: "launcher_surface_id_0123456789AB",
+    surfaceTargets: { launcher_surface_id_0123456789AB: "native-owned-target" },
+    createdAt: new Date().toISOString(),
+  } as const;
+  const spec = launcherBrowserHelperSpawnSpec(descriptor as any, "/local/override.cjs");
+
+  expect(spec.remote).toBe(true);
+  expect(spec.command).toBe("/usr/bin/ssh");
+  expect(spec.browserHostDescriptorPath)
+    .toBe("/home/ubuntu/.codex-chatgpt-web/runtime/launcher-browser.json");
+  expect(spec.readyTimeoutMs).toBe(30_000);
+  expect(spec.args.slice(0, 7)).toEqual([
+    "-T",
+    "-o", "BatchMode=yes",
+    "-o", "ServerAliveInterval=30",
+    "-o", "ServerAliveCountMax=3",
+  ]);
+  expect(spec.args).toContain("root@example.test");
+  const command = spec.args.at(-1)!;
+  expect(command).toContain("runuser -u 'ubuntu'");
+  expect(command).toContain("ELECTRON_RUN_AS_NODE=1");
+  expect(command).toContain("CODEX_CHATGPT_WEB_BROWSER_HELPER_PROCESS=1");
+  expect(command).toContain("'/tmp/.mount_launcher/codex-web-gpt-launcher'");
+  expect(command).toContain("'/tmp/.mount_launcher/resources/runtime/app/browser-helper.cjs'");
+  expect(command).not.toContain("/local/override.cjs");
+});
+
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });

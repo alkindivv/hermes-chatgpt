@@ -95,7 +95,7 @@ Setup options:
 Remote browser options:
   --remote-descriptor PATH     Descriptor on the VPS (default: ~/.codex-chatgpt-web/runtime/launcher-browser.json)
   --local-descriptor PATH      Owner-only descriptor written on this Mac
-  --browser-helper-script PATH Override the local browser helper script
+  --browser-helper-script PATH Local compatibility fallback for browser helper discovery
 
 Global:
   --home PATH                  Override ~/.codex-chatgpt-web

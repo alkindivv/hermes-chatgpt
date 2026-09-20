@@ -44,6 +44,67 @@ type HelperMessage =
       retryable?: boolean;
     };
 
+function shellQuote(value: string): string {
+  if (/[\r\n\0]/.test(value)) throw new Error("Launcher browser helper command contains an unsafe character");
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+export interface LauncherBrowserHelperSpawnSpec {
+  command: string;
+  args: string[];
+  env: NodeJS.ProcessEnv;
+  browserHostDescriptorPath?: string;
+  readyTimeoutMs: number;
+  remote: boolean;
+}
+
+export function launcherBrowserHelperSpawnSpec(
+  descriptor: ReturnType<typeof readLauncherBrowserHostDescriptor>,
+  helperScriptOverride?: string,
+): LauncherBrowserHelperSpawnSpec {
+  const remote = descriptor.helper.remote;
+  if (descriptor.remote === true && remote) {
+    const helperCommand = [
+      "env",
+      "ELECTRON_RUN_AS_NODE=1",
+      "CODEX_CHATGPT_WEB_BROWSER_HELPER_PROCESS=1",
+      shellQuote(remote.executable),
+      shellQuote(remote.script),
+    ].join(" ");
+    const ownerCommand = `if [ "$(id -un)" = ${shellQuote(remote.owner)} ]; then exec ${helperCommand}; `
+      + `else exec runuser -u ${shellQuote(remote.owner)} -- ${helperCommand}; fi`;
+    return {
+      command: remote.sshExecutable,
+      args: [
+        "-T",
+        "-o", "BatchMode=yes",
+        "-o", "ServerAliveInterval=30",
+        "-o", "ServerAliveCountMax=3",
+        remote.target,
+        ownerCommand,
+      ],
+      env: { ...process.env },
+      browserHostDescriptorPath: remote.descriptorPath,
+      readyTimeoutMs: 30_000,
+      remote: true,
+    };
+  }
+  if (descriptor.remote === true) {
+    throw new Error("Remote launcher descriptor is missing SSH browser-helper metadata");
+  }
+  return {
+    command: descriptor.helper.executable,
+    args: [helperScriptOverride ?? descriptor.helper.script],
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: "1",
+      CODEX_CHATGPT_WEB_BROWSER_HELPER_PROCESS: "1",
+    },
+    readyTimeoutMs: 15_000,
+    remote: false,
+  };
+}
+
 function parseHelperMessage(line: string): HelperMessage {
   const value = JSON.parse(line) as unknown;
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -186,6 +247,8 @@ export class LauncherBrowserHelperClient {
   private readyReject?: (error: Error) => void;
   private readonly pending = new Map<string, PendingTurn>();
   private helperFeatures = new Set<string>();
+  private helperBrowserHostDescriptorPath?: string;
+  private helperRunsRemote = false;
 
   constructor(private readonly config: ResolvedBrowserConfig) {}
 
@@ -273,8 +336,11 @@ export class LauncherBrowserHelperClient {
           id: turn.traceId,
           config: {
             appName: this.config.appName,
-            browserHostDescriptorPath: this.config.browserHostDescriptorPath!,
-            browserDiagnosticsPath: this.config.browserDiagnosticsPath,
+            browserHostDescriptorPath: this.helperBrowserHostDescriptorPath
+              ?? this.config.browserHostDescriptorPath!,
+            ...(this.helperRunsRemote ? {} : {
+              browserDiagnosticsPath: this.config.browserDiagnosticsPath,
+            }),
             turnTimeoutMs: this.config.turnTimeoutMs,
             autoApproveToolCalls: this.config.autoApproveToolCalls,
           },
@@ -308,6 +374,8 @@ export class LauncherBrowserHelperClient {
     this.ready = undefined;
     this.readyResolve = undefined;
     this.readyReject = undefined;
+    this.helperBrowserHostDescriptorPath = undefined;
+    this.helperRunsRemote = false;
     for (const id of [...this.pending.keys()]) {
       this.finishWithError(id, new DOMException("Launcher browser helper is closing", "AbortError"));
     }
@@ -325,15 +393,16 @@ export class LauncherBrowserHelperClient {
       return this.ready;
     }
     const descriptor = readLauncherBrowserHostDescriptor(this.config.browserHostDescriptorPath!);
+    const localHelper = this.config.browserHelperScriptPath ?? this.bundledHelperScript() ?? descriptor.helper.script;
+    const launch = launcherBrowserHelperSpawnSpec(descriptor, localHelper);
+    this.helperBrowserHostDescriptorPath = launch.browserHostDescriptorPath
+      ?? this.config.browserHostDescriptorPath!;
+    this.helperRunsRemote = launch.remote;
     const child = spawn(
-      descriptor.helper.executable,
-      [this.config.browserHelperScriptPath ?? this.bundledHelperScript() ?? descriptor.helper.script],
+      launch.command,
+      launch.args,
       {
-        env: {
-          ...process.env,
-          ELECTRON_RUN_AS_NODE: "1",
-          CODEX_CHATGPT_WEB_BROWSER_HELPER_PROCESS: "1",
-        },
+        env: launch.env,
         stdio: ["pipe", "pipe", "pipe"],
         windowsHide: true,
       },
@@ -366,8 +435,10 @@ export class LauncherBrowserHelperClient {
       `Launcher browser helper exited ${signal ? `from signal ${signal}` : `with status ${code ?? 1}`}`,
     )));
     const timer = setTimeout(() => {
-      if (this.child === child) this.readyReject?.(new Error("Launcher browser helper did not become ready"));
-    }, 15_000);
+      if (this.child === child) this.readyReject?.(new Error(
+        `Launcher browser helper did not become ready (${launch.remote ? "remote SSH" : "local"} transport)`,
+      ));
+    }, launch.readyTimeoutMs);
     try {
       await this.ready;
     } catch (error) {
@@ -376,6 +447,8 @@ export class LauncherBrowserHelperClient {
         this.ready = undefined;
         this.readyResolve = undefined;
         this.readyReject = undefined;
+        this.helperBrowserHostDescriptorPath = undefined;
+        this.helperRunsRemote = false;
       }
       try {
         await this.terminateChild(child, 500);

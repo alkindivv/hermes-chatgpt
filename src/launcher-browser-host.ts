@@ -51,6 +51,15 @@ export interface LauncherBrowserHostDescriptor {
   helper: {
     executable: string;
     script: string;
+    /** Optional SSH transport that keeps Playwright next to a remote Electron browser. */
+    remote?: {
+      sshExecutable: string;
+      target: string;
+      descriptorPath: string;
+      owner: string;
+      executable: string;
+      script: string;
+    };
   };
   partition: string;
   idleUrl: string;
@@ -116,6 +125,30 @@ function assertDescriptorShape(value: unknown): LauncherBrowserHostDescriptor {
   if (!helperScript || !existsSync(helperScript)) {
     throw new Error("Launcher browser descriptor helper script does not exist");
   }
+  const remoteHelper = descriptor.helper.remote;
+  if (remoteHelper !== undefined) {
+    if (descriptor.remote !== true || !remoteHelper || typeof remoteHelper !== "object") {
+      throw new Error("Launcher browser descriptor has invalid remote helper metadata");
+    }
+    if (typeof remoteHelper.sshExecutable !== "string"
+      || !remoteHelper.sshExecutable.trim()
+      || /[\r\n\0]/.test(remoteHelper.sshExecutable)
+      || typeof remoteHelper.target !== "string"
+      || !/^[A-Za-z0-9_.@%:+-]+$/.test(remoteHelper.target)
+      || typeof remoteHelper.descriptorPath !== "string"
+      || (!remoteHelper.descriptorPath.startsWith("/") && !remoteHelper.descriptorPath.startsWith("~/"))
+      || /[\r\n\0]/.test(remoteHelper.descriptorPath)
+      || typeof remoteHelper.owner !== "string"
+      || !/^[A-Za-z_][A-Za-z0-9_.-]{0,63}$/.test(remoteHelper.owner)
+      || typeof remoteHelper.executable !== "string"
+      || !remoteHelper.executable.startsWith("/")
+      || /[\r\n\0]/.test(remoteHelper.executable)
+      || typeof remoteHelper.script !== "string"
+      || !remoteHelper.script.startsWith("/")
+      || /[\r\n\0]/.test(remoteHelper.script)) {
+      throw new Error("Launcher browser descriptor has invalid remote helper metadata");
+    }
+  }
   const expectedPartition = descriptor.profile === "development"
     ? "persist:codex-web-gpt-dev-chatgpt"
     : "persist:codex-web-gpt-chatgpt";
@@ -146,7 +179,20 @@ function assertDescriptorShape(value: unknown): LauncherBrowserHostDescriptor {
     ...(descriptor.remote === true ? { remote: true as const } : {}),
     endpoint,
     control: { endpoint: controlEndpoint, token: descriptor.control.token },
-    helper: { executable: helperExecutable, script: helperScript },
+    helper: {
+      executable: helperExecutable,
+      script: helperScript,
+      ...(remoteHelper ? {
+        remote: {
+          sshExecutable: remoteHelper.sshExecutable,
+          target: remoteHelper.target,
+          descriptorPath: remoteHelper.descriptorPath,
+          owner: remoteHelper.owner,
+          executable: remoteHelper.executable,
+          script: remoteHelper.script,
+        },
+      } : {}),
+    },
     partition: descriptor.partition,
     idleUrl: descriptor.idleUrl,
     surfaceId: descriptor.surfaceId,

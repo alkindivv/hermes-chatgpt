@@ -42,7 +42,7 @@ test("remote browser link validates a launcher descriptor without requiring VPS 
   });
 });
 
-test("remote browser link builds a process-bound local descriptor using the local helper", () => {
+test("remote browser link keeps a local fallback helper and advertises SSH helper execution", () => {
   const remote = parseRemoteLauncherDescriptor(remoteDescriptorJson());
   const surfaceId = "f".repeat(32);
   const snapshot = {
@@ -55,6 +55,12 @@ test("remote browser link builds a process-bound local descriptor using the loca
     remote,
     snapshot,
     "/local/runtime/browser-helper.cjs",
+    {
+      sshExecutable: "ssh",
+      target: "root@example.test",
+      descriptorPath: "/home/ubuntu/.codex-chatgpt-web/runtime/launcher-browser.json",
+      owner: "ubuntu",
+    },
   );
   expect(descriptor).toMatchObject({
     version: 3,
@@ -70,6 +76,14 @@ test("remote browser link builds a process-bound local descriptor using the loca
     helper: {
       executable: process.execPath,
       script: "/local/runtime/browser-helper.cjs",
+      remote: {
+        sshExecutable: "ssh",
+        target: "root@example.test",
+        descriptorPath: "/home/ubuntu/.codex-chatgpt-web/runtime/launcher-browser.json",
+        owner: "ubuntu",
+        executable: "/opt/codex-web-gpt/electron",
+        script: "/opt/codex-web-gpt/browser-helper.cjs",
+      },
     },
     surfaceId,
     surfaceTargets: { [surfaceId]: "fresh-native-target" },
