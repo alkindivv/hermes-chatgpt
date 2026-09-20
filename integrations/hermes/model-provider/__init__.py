@@ -43,7 +43,7 @@ class HermesChatGPTProfile(ProviderProfile):
         return {"max_retries": 0}
 
 
-register_provider(HermesChatGPTProfile(
+_profile_kwargs = dict(
     name="hermes-chatgpt",
     api_mode="chat_completions",
     display_name="ChatGPT Web (Hermes bridge)",
@@ -55,9 +55,12 @@ register_provider(HermesChatGPTProfile(
     fixed_temperature=OMIT_TEMPERATURE,
     default_aux_model="chatgpt-web/high",
     fallback_models=("chatgpt-web/light", "chatgpt-web/medium", "chatgpt-web/high"),
-    # Conservative defaults, not guesses at the underlying model's advertised
-    # maximum. Operator overrides may use the verified local /v1/models catalog.
-    model_capabilities={
+)
+
+# Hermes >= 0.21.3 lets provider plugins declare per-model capabilities directly.
+# Older supported installs (including 0.21.2) use config.yaml model_overrides.
+if "model_capabilities" in getattr(ProviderProfile, "__dataclass_fields__", {}):
+    _profile_kwargs["model_capabilities"] = {
         model: {"context_window": window, "supports_vision": True,
                 "supports_tools": True, "supports_reasoning": False}
         for model, window in (
@@ -67,5 +70,6 @@ register_provider(HermesChatGPTProfile(
             ("chatgpt-web/extra-high", 90000),
             ("chatgpt-web/pro", 104000),
         )
-    },
-))
+    }
+
+register_provider(HermesChatGPTProfile(**_profile_kwargs))

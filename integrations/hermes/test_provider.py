@@ -72,6 +72,47 @@ class ProviderContractTest(unittest.TestCase):
                 self.assertNotEqual(refused.returncode, 0)
                 self.assertFalse((home_a / "config.yaml").exists())
 
+    def test_20_legacy_provider_profile_without_capability_field_still_loads(self):
+        with tempfile.TemporaryDirectory(prefix="hermes-provider-legacy-") as temp:
+            root = Path(temp)
+            providers = root / "providers"
+            providers.mkdir()
+            (providers / "__init__.py").write_text(
+                "REGISTRY = []\n"
+                "def register_provider(profile): REGISTRY.append(profile)\n"
+            )
+            (providers / "base.py").write_text(
+                "from dataclasses import dataclass, field\n"
+                "class _Omit: pass\n"
+                "OMIT_TEMPERATURE = _Omit()\n"
+                "@dataclass\n"
+                "class ProviderProfile:\n"
+                "    name: str\n"
+                "    api_mode: str = 'chat_completions'\n"
+                "    display_name: str = ''\n"
+                "    description: str = ''\n"
+                "    env_vars: tuple = ()\n"
+                "    base_url: str = ''\n"
+                "    supports_vision: bool = False\n"
+                "    supports_vision_tool_messages: bool = True\n"
+                "    fixed_temperature: object = None\n"
+                "    default_aux_model: str = ''\n"
+                "    fallback_models: tuple = ()\n"
+            )
+            script = (
+                "import importlib.util, sys; "
+                f"sys.path.insert(0, {str(root)!r}); "
+                f"spec=importlib.util.spec_from_file_location('legacy_plugin', {str(ROOT / 'model-provider' / '__init__.py')!r}); "
+                "mod=importlib.util.module_from_spec(spec); spec.loader.exec_module(mod); "
+                "from providers import REGISTRY; "
+                "p=REGISTRY[-1]; "
+                "assert p.name == 'hermes-chatgpt'; "
+                "assert p.base_url.endswith('/v1'); "
+                "assert not hasattr(p, 'model_capabilities')"
+            )
+            result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
