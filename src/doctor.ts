@@ -35,7 +35,7 @@ function secureFile(path: string): boolean {
 }
 
 function launcherOwnershipError(config: AppConfig, health: Record<string, unknown>): string | undefined {
-  if (config.browserHost !== "launcher") return undefined;
+  if (config.browserHost !== "launcher" || config.browserHostRemote === true) return undefined;
   const path = join(getConfigDir(), "runtime", "launcher-supervisor.json");
   if (!existsSync(path)) return `Launcher runtime ownership marker is missing: ${path}`;
   let state: Record<string, unknown>;
@@ -158,7 +158,8 @@ export async function runDoctor(): Promise<DoctorReport> {
   }
 
   const service = getServiceStatus();
-  if (config.browserHost === "launcher") {
+  const launcherOwnsRuntime = config.browserHost === "launcher" && config.browserHostRemote !== true;
+  if (launcherOwnsRuntime) {
     checks.push(service.installed || service.loaded
       ? {
           id: "service",
@@ -191,7 +192,7 @@ export async function runDoctor(): Promise<DoctorReport> {
       checks.push({ id: "tunnel-key", status: "ok", message: "Tunnel runtime key is stored privately" });
     }
     const tunnelService = getTunnelServiceStatus();
-    if (config.browserHost === "launcher") {
+    if (launcherOwnsRuntime) {
       checks.push(tunnelService.installed || tunnelService.loaded
         ? {
             id: "tunnel-service",
