@@ -6,12 +6,19 @@ import { join } from "node:path";
 import {
   LAUNCHER_BROWSER_HOST_KIND,
   LAUNCHER_BROWSER_IDLE_URL,
+  LAUNCHER_TURN_END_TIMEOUT_MS,
+  LAUNCHER_TURN_HEARTBEAT_TIMEOUT_MS,
+  LAUNCHER_TURN_START_TIMEOUT_MS,
+  REMOTE_LAUNCHER_TURN_END_TIMEOUT_MS,
+  REMOTE_LAUNCHER_TURN_HEARTBEAT_TIMEOUT_MS,
+  REMOTE_LAUNCHER_TURN_START_TIMEOUT_MS,
   LauncherManualTurnTimedOutError,
   LauncherRetainedConversationUnavailableError,
   LauncherBrowserTurnCancelledError,
   endLauncherManualTurn,
   inspectLauncherBrowserHost,
   inspectLauncherBrowserHostLiveness,
+  launcherTurnControlTimeoutMs,
   notifyLauncherTurn,
   markLauncherManualTurnStarted,
   readLauncherBrowserHostDescriptor,
@@ -64,6 +71,18 @@ function descriptorFile(
   })}\n`, { mode: 0o600 });
   return path;
 }
+
+test("remote launcher turn control gets SSH-safe timeouts without widening local control", () => {
+  expect(launcherTurnControlTimeoutMs(false, "start")).toBe(LAUNCHER_TURN_START_TIMEOUT_MS);
+  expect(launcherTurnControlTimeoutMs(false, "heartbeat")).toBe(LAUNCHER_TURN_HEARTBEAT_TIMEOUT_MS);
+  expect(launcherTurnControlTimeoutMs(false, "end")).toBe(LAUNCHER_TURN_END_TIMEOUT_MS);
+  expect(launcherTurnControlTimeoutMs(true, "start")).toBe(REMOTE_LAUNCHER_TURN_START_TIMEOUT_MS);
+  expect(launcherTurnControlTimeoutMs(true, "heartbeat")).toBe(REMOTE_LAUNCHER_TURN_HEARTBEAT_TIMEOUT_MS);
+  expect(launcherTurnControlTimeoutMs(true, "end")).toBe(REMOTE_LAUNCHER_TURN_END_TIMEOUT_MS);
+  expect(REMOTE_LAUNCHER_TURN_START_TIMEOUT_MS).toBeGreaterThan(LAUNCHER_TURN_START_TIMEOUT_MS);
+  expect(REMOTE_LAUNCHER_TURN_HEARTBEAT_TIMEOUT_MS).toBeGreaterThan(LAUNCHER_TURN_HEARTBEAT_TIMEOUT_MS);
+  expect(REMOTE_LAUNCHER_TURN_END_TIMEOUT_MS).toBeGreaterThan(LAUNCHER_TURN_END_TIMEOUT_MS);
+});
 
 test("launcher descriptor is owner-only, loopback-only, and process-bound", () => {
   const path = descriptorFile();
@@ -144,6 +163,63 @@ test("remote launcher descriptor refreshes surface ownership and marks turn owne
         helperPid: process.pid,
         remoteOwner: true,
       },
+    });
+  } finally {
+    await new Promise<void>(resolve => server.close(() => resolve()));
+  }
+});
+
+test("remote launcher start reconciles one lost control acknowledgement with the same owner", async () => {
+  const bodies: unknown[] = [];
+  let attempts = 0;
+  const surfaceId = "s".repeat(32);
+  const server = createServer(async (request, response) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of request) chunks.push(Buffer.from(chunk));
+    bodies.push(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+    attempts += 1;
+    if (attempts === 1) {
+      request.socket.destroy();
+      return;
+    }
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({
+      ok: true,
+      surfaceId,
+      reused: true,
+      connectorBound: false,
+    }));
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  try {
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("test server has no port");
+    const path = descriptorFile(
+      `http://127.0.0.1:${address.port}`,
+      "production",
+      "http://127.0.0.1:39110",
+      true,
+    );
+    await expect(notifyLauncherTurn(path, {
+      phase: "start",
+      traceId: "remote-reconcile",
+      helperPid: process.pid,
+    })).resolves.toEqual({
+      surfaceId,
+      reused: true,
+      connectorBound: false,
+    });
+    expect(attempts).toBe(2);
+    expect(bodies).toHaveLength(2);
+    expect(bodies[0]).toEqual(bodies[1]);
+    expect(bodies[0]).toEqual({
+      phase: "start",
+      traceId: "remote-reconcile",
+      helperPid: process.pid,
+      remoteOwner: true,
     });
   } finally {
     await new Promise<void>(resolve => server.close(() => resolve()));

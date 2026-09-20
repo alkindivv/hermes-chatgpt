@@ -67,7 +67,6 @@ import {
   LauncherBrowserTurnCancelledError,
   LauncherRetainedConversationUnavailableError,
   LAUNCHER_TURN_HEARTBEAT_INTERVAL_MS,
-  LAUNCHER_TURN_HEARTBEAT_TIMEOUT_MS,
   notifyLauncherTurn,
 } from "../../launcher-browser-host";
 import {
@@ -4331,7 +4330,7 @@ export class ChatGptBrowserWorker {
         phase: "heartbeat",
         traceId: turn.traceId,
         helperPid: process.pid,
-      }, LAUNCHER_TURN_HEARTBEAT_TIMEOUT_MS).catch(error => {
+      }).catch(error => {
         const now = Date.now();
         if (now - lastHeartbeatFailureAt < 30_000) return;
         lastHeartbeatFailureAt = now;

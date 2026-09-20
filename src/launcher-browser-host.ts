@@ -458,6 +458,28 @@ export const LAUNCHER_TURN_HEARTBEAT_INTERVAL_MS = 10_000;
 export const LAUNCHER_TURN_HEARTBEAT_TIMEOUT_MS = 5_000;
 export const LAUNCHER_TURN_END_TIMEOUT_MS = 15_000;
 
+export const REMOTE_LAUNCHER_TURN_START_TIMEOUT_MS = 30_000;
+export const REMOTE_LAUNCHER_TURN_HEARTBEAT_TIMEOUT_MS = 20_000;
+export const REMOTE_LAUNCHER_TURN_END_TIMEOUT_MS = 30_000;
+
+export function launcherTurnControlTimeoutMs(
+  remote: boolean,
+  phase: LauncherTurnActivity["phase"],
+): number {
+  if (!remote) {
+    return phase === "end"
+      ? LAUNCHER_TURN_END_TIMEOUT_MS
+      : phase === "heartbeat"
+        ? LAUNCHER_TURN_HEARTBEAT_TIMEOUT_MS
+        : LAUNCHER_TURN_START_TIMEOUT_MS;
+  }
+  return phase === "end"
+    ? REMOTE_LAUNCHER_TURN_END_TIMEOUT_MS
+    : phase === "heartbeat"
+      ? REMOTE_LAUNCHER_TURN_HEARTBEAT_TIMEOUT_MS
+      : REMOTE_LAUNCHER_TURN_START_TIMEOUT_MS;
+}
+
 export interface LauncherManualTurnOwner {
   traceId: string;
   helperPid: number;
@@ -683,11 +705,7 @@ export async function cancelLauncherManualTurn(
 export async function notifyLauncherTurn(
   descriptorPath: string,
   activity: LauncherTurnActivity,
-  timeoutMs = activity.phase === "end"
-    ? LAUNCHER_TURN_END_TIMEOUT_MS
-    : activity.phase === "heartbeat"
-      ? LAUNCHER_TURN_HEARTBEAT_TIMEOUT_MS
-      : LAUNCHER_TURN_START_TIMEOUT_MS,
+  timeoutMs?: number,
 ): Promise<{
   surfaceId?: string;
   reused?: boolean;
@@ -695,64 +713,76 @@ export async function notifyLauncherTurn(
   cancelledByUser?: boolean;
 }> {
   const descriptor = readLauncherBrowserHostDescriptor(descriptorPath);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(`${descriptor.control.endpoint}/v1/turn/${activity.phase}`, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${descriptor.control.token}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify(descriptor.remote === true ? { ...activity, remoteOwner: true } : activity),
-      signal: controller.signal,
-    });
-    if (!response.ok) {
+  const effectiveTimeoutMs = timeoutMs ?? launcherTurnControlTimeoutMs(descriptor.remote === true, activity.phase);
+  const attempts = descriptor.remote === true && activity.phase !== "heartbeat" ? 2 : 1;
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), effectiveTimeoutMs);
+    try {
+      const response = await fetch(`${descriptor.control.endpoint}/v1/turn/${activity.phase}`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${descriptor.control.token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(descriptor.remote === true ? { ...activity, remoteOwner: true } : activity),
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as Record<string, unknown>;
+        if (response.status === 409 && body.code === "turn_cancelled") {
+          throw new LauncherBrowserTurnCancelledError(
+            typeof body.error === "string" ? body.error : `Browser turn ${activity.traceId} was cancelled by the user`,
+          );
+        }
+        if (response.status === 409 && body.code === "retained_conversation_unavailable") {
+          throw new LauncherRetainedConversationUnavailableError(
+            typeof body.error === "string" ? body.error : "The retained ChatGPT conversation is no longer available",
+          );
+        }
+        const detail = typeof body.error === "string" ? body.error : "";
+        throw new Error(`HTTP ${response.status}${detail ? `: ${detail}` : ""}`);
+      }
       const body = await response.json().catch(() => ({})) as Record<string, unknown>;
-      if (response.status === 409 && body.code === "turn_cancelled") {
-        throw new LauncherBrowserTurnCancelledError(
-          typeof body.error === "string" ? body.error : `Browser turn ${activity.traceId} was cancelled by the user`,
-        );
+      if (activity.phase === "start") {
+        if (typeof body.surfaceId !== "string" || !/^[A-Za-z0-9_-]{32}$/.test(body.surfaceId)) {
+          throw new Error("Launcher browser control channel returned an invalid turn surface id");
+        }
+        if (typeof body.reused !== "boolean") {
+          throw new Error("Launcher browser control channel returned an invalid reuse state");
+        }
+        if (typeof body.connectorBound !== "boolean") {
+          throw new Error("Launcher browser control channel returned an invalid connector state");
+        }
+        return {
+          surfaceId: body.surfaceId,
+          reused: body.reused,
+          connectorBound: body.connectorBound,
+        };
       }
-      if (response.status === 409 && body.code === "retained_conversation_unavailable") {
-        throw new LauncherRetainedConversationUnavailableError(
-          typeof body.error === "string" ? body.error : "The retained ChatGPT conversation is no longer available",
-        );
+      if (activity.phase === "end") {
+        if (typeof body.cancelledByUser !== "boolean") {
+          throw new Error("Launcher browser control channel returned an invalid turn release result");
+        }
+        return { cancelledByUser: body.cancelledByUser };
       }
-      const detail = typeof body.error === "string" ? body.error : "";
-      throw new Error(`HTTP ${response.status}${detail ? `: ${detail}` : ""}`);
+      return {};
+    } catch (error) {
+      if (error instanceof LauncherBrowserTurnCancelledError
+        || error instanceof LauncherRetainedConversationUnavailableError) throw error;
+      lastError = error;
+    } finally {
+      clearTimeout(timer);
     }
-    const body = await response.json().catch(() => ({})) as Record<string, unknown>;
-    if (activity.phase === "start") {
-      if (typeof body.surfaceId !== "string" || !/^[A-Za-z0-9_-]{32}$/.test(body.surfaceId)) {
-        throw new Error("Launcher browser control channel returned an invalid turn surface id");
-      }
-      if (typeof body.reused !== "boolean") {
-        throw new Error("Launcher browser control channel returned an invalid reuse state");
-      }
-      if (typeof body.connectorBound !== "boolean") {
-        throw new Error("Launcher browser control channel returned an invalid connector state");
-      }
-      return {
-        surfaceId: body.surfaceId,
-        reused: body.reused,
-        connectorBound: body.connectorBound,
-      };
-    }
-    if (activity.phase === "end") {
-      if (typeof body.cancelledByUser !== "boolean") {
-        throw new Error("Launcher browser control channel returned an invalid turn release result");
-      }
-      return { cancelledByUser: body.cancelledByUser };
-    }
-    return {};
-  } catch (error) {
-    if (error instanceof LauncherBrowserTurnCancelledError
-      || error instanceof LauncherRetainedConversationUnavailableError) throw error;
-    throw new Error(`Launcher browser control channel failed: ${error instanceof Error ? error.message : String(error)}`);
-  } finally {
-    clearTimeout(timer);
   }
+
+  throw new Error(
+    `Launcher browser control channel ${activity.phase} failed after ${attempts} attempt(s)`
+    + ` with ${effectiveTimeoutMs}ms timeout: `
+    + `${lastError instanceof Error ? lastError.message : String(lastError)}`,
+  );
 }
 
 export async function releaseLauncherRetainedConversation(
