@@ -1,0 +1,20 @@
+[Unit]
+Description=Hermes ChatGPT inference bridge and MCP tunnel
+Wants=network-online.target hermes-chatgpt-electron.service
+After=network-online.target hermes-chatgpt-electron.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+Environment=HOME=/home/ubuntu
+ExecStartPre=/bin/sh -c 'i=0; while [ "$i" -lt 45 ]; do /home/ubuntu/hermes-chatgpt-runtime/bin/codex-chatgpt-web browser check && exit 0; i=$((i+1)); sleep 2; done; exit 1'
+ExecStart=/home/ubuntu/hermes-chatgpt-runtime/bin/codex-chatgpt-web hermes serve
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=90
+TimeoutStopSec=30
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target
