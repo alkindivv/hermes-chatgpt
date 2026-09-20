@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { currentRuntimeCommand, defaultConfig, expandUserPath } from "../config";
 import { inspectLauncherBrowserHost, inspectLauncherBrowserHostLiveness, readLauncherBrowserHostDescriptor } from "../launcher-browser-host";
-import { connectTunnel, createTunnelConfig, installRuntimeKey, installTunnelClient, stopTunnel, tunnelStatus, waitForTunnelReady } from "../tunnel";
+import { connectTunnel, createTunnelConfig, installRuntimeKey, installRuntimeKeyBytes, installTunnelClient, stopTunnel, tunnelStatus, waitForTunnelReady } from "../tunnel";
 import { HERMES_CONNECTOR_NAME, loadHermesConfig, readHermesApiToken, resolveHermesHome, saveHermesConfig } from "./config";
 import { startHermesServer } from "./server";
 
@@ -17,11 +17,30 @@ function option(args: string[], name: string): string | undefined {
 }
 function noArgs(args: string[]) { if (args.length) throw new Error(`Unknown Hermes arguments: ${args.join(" ")}`); }
 
+export function resolveHermesRuntimeKeyInput(options: {
+  fileArg?: string;
+  envArg?: string;
+  existingPath?: string;
+  env?: Record<string, string | undefined>;
+}): { type: "file" | "value"; value: string } {
+  if (options.fileArg && options.envArg) throw new Error("Choose only one Hermes runtime key source");
+  if (options.envArg) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(options.envArg)) throw new Error("Invalid Hermes runtime key environment variable name");
+    const value = (options.env ?? process.env)[options.envArg]?.trim();
+    if (!value) throw new Error(`Hermes runtime key environment variable ${options.envArg} is missing or empty`);
+    return { type: "value", value };
+  }
+  const path = options.fileArg ?? options.existingPath;
+  if (!path) throw new Error("Hermes setup needs --runtime-key-file or --runtime-key-env");
+  return { type: "file", value: path };
+}
+
 async function setup(home: string, args: string[]): Promise<void> {
   if (existsSync(join(home, "config.json"))) throw new Error("Choose a separate Hermes bridge home, not the existing Codex home");
   const descriptorArg = option(args, "--browser-host-descriptor");
   const tunnelArg = option(args, "--tunnel-id");
   const keyArg = option(args, "--runtime-key-file");
+  const keyEnvArg = option(args, "--runtime-key-env");
   const portArg = option(args, "--port");
   const acknowledged = args.includes("--acknowledge-unofficial");
   if (acknowledged) args.splice(args.indexOf("--acknowledge-unofficial"), 1);
@@ -31,14 +50,20 @@ async function setup(home: string, args: string[]): Promise<void> {
   const descriptorPath = descriptorArg ? resolve(expandUserPath(descriptorArg)) : existing?.runtime.browserHostDescriptorPath;
   const tunnelId = tunnelArg ?? existing?.runtime.tunnel?.tunnelId;
   if (!descriptorPath || !tunnelId) throw new Error("Hermes setup needs --browser-host-descriptor and a dedicated --tunnel-id (not the Mac tunnel)");
-  if (!keyArg && !existing?.runtime.tunnel?.runtimeKeyFile) throw new Error("Hermes setup needs --runtime-key-file");
+  const keyInput = resolveHermesRuntimeKeyInput({
+    fileArg: keyArg,
+    envArg: keyEnvArg,
+    existingPath: existing?.runtime.tunnel?.runtimeKeyFile,
+  });
   const port = portArg === undefined ? existing?.runtime.port ?? 17842 : Number(portArg);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("--port must be an integer from 1 to 65535");
   const descriptor = readLauncherBrowserHostDescriptor(descriptorPath);
   if (descriptor.profile !== "production") throw new Error("Use the production Electron browser descriptor, not the DEV launcher profile");
   const capability = await inspectLauncherBrowserHost(descriptorPath, { detectCapabilities: true, expectedProfile: "production" });
   if (!capability.solAvailable) throw new Error("This Hermes backend currently requires a Sol-capable account; Luna rolling checkpoints remain Codex-specific");
-  const runtimeKeyFile = keyArg ? installRuntimeKey(resolve(expandUserPath(keyArg))) : existing!.runtime.tunnel!.runtimeKeyFile;
+  const runtimeKeyFile = keyInput.type === "value"
+    ? installRuntimeKeyBytes(keyInput.value)
+    : keyArg ? installRuntimeKey(resolve(expandUserPath(keyInput.value))) : keyInput.value;
   const binaryPath = await installTunnelClient();
   const alias = `hermes-${createHash("sha256").update(home).digest("hex").slice(0, 12)}`;
   const tunnel = createTunnelConfig({ binaryPath, tunnelId, runtimeKeyFile, profileName: alias, alias });

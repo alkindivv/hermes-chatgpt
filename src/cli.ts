@@ -46,7 +46,7 @@ Usage:
   codex-chatgpt-web subagents <status|compatibility-v1|native>
   codex-chatgpt-web browser check
   codex-chatgpt-web remote-browser connect SSH_TARGET [options]
-  codex-chatgpt-web hermes setup --browser-host-descriptor PATH --tunnel-id ID --runtime-key-file PATH --acknowledge-unofficial
+  codex-chatgpt-web hermes setup --browser-host-descriptor PATH --tunnel-id ID <--runtime-key-file PATH|--runtime-key-env NAME> --acknowledge-unofficial
   codex-chatgpt-web hermes serve
   codex-chatgpt-web hermes status
   codex-chatgpt-web hermes tunnel <start|stop|status>

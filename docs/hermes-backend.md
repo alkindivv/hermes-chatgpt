@@ -83,9 +83,9 @@ Keep the source/runtime directory in place after configuration: the MCP tunnel l
 
 Keep the existing production Electron host running. The default bridge home is `~/.hermes-chatgpt`, separate from both `~/.hermes` and `~/.codex-chatgpt-web`.
 
-Create a **dedicated Hermes tunnel ID** and obtain the required runtime-key file. Do not reuse the tunnel connected to the Mac's `Codex Native2` connector. The setup cannot inspect a tunnel configuration on another machine; choosing a distinct tunnel ID is an operator responsibility.
+Create a **dedicated Hermes tunnel ID** and obtain the required runtime key. Do not reuse the tunnel connected to the Mac's `Codex Native2` connector. The setup cannot inspect a tunnel configuration on another machine; choosing a distinct tunnel ID is an operator responsibility.
 
-Replace the three example values below with real local paths and the dedicated ID:
+Use either a private key file:
 
 ```bash
 ./dist/hermes-runtime/bin/codex-chatgpt-web hermes setup \
@@ -94,6 +94,18 @@ Replace the three example values below with real local paths and the dedicated I
   --runtime-key-file /home/ubuntu/private/hermes-tunnel-runtime.key \
   --acknowledge-unofficial
 ```
+
+or an existing environment variable without creating an intermediate plaintext file:
+
+```bash
+./dist/hermes-runtime/bin/codex-chatgpt-web hermes setup \
+  --browser-host-descriptor /home/ubuntu/.codex-chatgpt-web/runtime/launcher-browser.json \
+  --tunnel-id YOUR_DEDICATED_HERMES_TUNNEL_ID \
+  --runtime-key-env OPENAI_API_TUNNEL \
+  --acknowledge-unofficial
+```
+
+The two runtime-key options are mutually exclusive. The environment value is immediately copied into the bridge's owner-only managed secret file; the variable name and key value are not persisted in `hermes.json`.
 
 Setup verifies the production browser and account capabilities, then writes:
 

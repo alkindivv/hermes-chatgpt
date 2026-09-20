@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { defaultConfig } from "../src/config";
 import { mcpCommand } from "../src/tunnel";
 import { loadHermesConfig, saveHermesConfig, readHermesApiToken } from "../src/hermes/config";
+import { resolveHermesRuntimeKeyInput } from "../src/hermes/cli";
 import { chatGptConnectorMentionQuery } from "../src/adapters/chatgpt-web/browser-worker";
 
 const roots: string[] = [];
@@ -41,6 +42,19 @@ test("setup refuses an existing Codex home or a foreign broker/tunnel path", () 
   writeFileSync(join(home, "config.json"), "ORIGINAL");
   expect(() => saveHermesConfig(home, runtime)).toThrow("Codex");
   expect(readFileSync(join(home, "config.json"), "utf8")).toBe("ORIGINAL");
+});
+
+test("Hermes runtime key input prefers one explicit source and fails closed on missing env", () => {
+  expect(resolveHermesRuntimeKeyInput({ fileArg: "/tmp/key", envArg: undefined, existingPath: undefined, env: {} }))
+    .toEqual({ type: "file", value: "/tmp/key" });
+  expect(resolveHermesRuntimeKeyInput({ fileArg: undefined, envArg: "OPENAI_API_TUNNEL", existingPath: undefined, env: { OPENAI_API_TUNNEL: " secret-value " } }))
+    .toEqual({ type: "value", value: "secret-value" });
+  expect(() => resolveHermesRuntimeKeyInput({ fileArg: "/tmp/key", envArg: "OPENAI_API_TUNNEL", existingPath: undefined, env: { OPENAI_API_TUNNEL: "x" } }))
+    .toThrow("Choose only one");
+  expect(() => resolveHermesRuntimeKeyInput({ fileArg: undefined, envArg: "OPENAI_API_TUNNEL", existingPath: undefined, env: {} }))
+    .toThrow("missing or empty");
+  expect(resolveHermesRuntimeKeyInput({ fileArg: undefined, envArg: undefined, existingPath: "/managed/key", env: {} }))
+    .toEqual({ type: "file", value: "/managed/key" });
 });
 
 test("only a Hermes MCP command opts in to the Hermes backend", () => {
