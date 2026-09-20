@@ -90,6 +90,40 @@ export function installCodexInterruptHook(
   return installCodexInterruptHookCommand(text, configPath, codexInterruptHookCommand(config));
 }
 
+function removeOrphanedInterruptTrustState(text: string, stateKey: string, nextTrustedHash: string): string {
+  const ending = lineEnding(text);
+  const lines = text.split(/\r\n|\n|\r/);
+  const header = `[hooks.state.${JSON.stringify(stateKey)}]`;
+  const matches = lines.flatMap((line, index) => line.trim() === header ? [index] : []);
+  if (matches.length === 0) return text;
+  if (matches.length > 1) {
+    throw new Error("Codex config contains duplicate orphan interrupt trust-state tables");
+  }
+
+  const start = matches[0]!;
+  let end = start + 1;
+  while (end < lines.length && !/^\s*\[/.test(lines[end]!)) end += 1;
+
+  const body = lines.slice(start + 1, end)
+    .map(line => line.trim())
+    .filter(line => line && !line.startsWith("#"));
+  if (body.length !== 1 || !/^trusted_hash\s*=\s*"sha256:[a-f0-9]{64}"\s*$/.test(body[0]!)) {
+    throw new Error("Existing interrupt trust-state table contains non-managed data; refusing to replace it");
+  }
+  if (body[0] === `trusted_hash = ${JSON.stringify(nextTrustedHash)}`) {
+    throw new Error("Codex interrupt lifecycle hook was partially removed; refusing to recreate it");
+  }
+  if (end < lines.length && lines[end]!.trim().startsWith(`[hooks.state.${JSON.stringify(stateKey)}.`)) {
+    throw new Error("Existing interrupt trust-state table has nested data; refusing to replace it");
+  }
+
+  lines.splice(start, end - start);
+  while (start < lines.length - 1 && lines[start]?.trim() === "" && lines[start - 1]?.trim() === "") {
+    lines.splice(start, 1);
+  }
+  return lines.join(ending);
+}
+
 export function installCodexInterruptHookCommand(
   text: string,
   configPath: string,
@@ -101,6 +135,7 @@ export function installCodexInterruptHookCommand(
   const groupIndex = interruptGroupCount(text);
   const stateKey = `${canonicalConfigPath(configPath)}:interrupt:${groupIndex}:0`;
   const trustedHash = codexInterruptHookHash(command);
+  text = removeOrphanedInterruptTrustState(text, stateKey, trustedHash);
   const ending = lineEnding(text);
   const core = [
     MANAGED_INTERRUPT_HOOK_START,

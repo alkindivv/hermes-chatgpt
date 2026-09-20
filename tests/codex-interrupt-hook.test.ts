@@ -7,6 +7,7 @@ import {
   codexInterruptHookCommand,
   codexInterruptHookHash,
   installCodexInterruptHook,
+  installCodexInterruptHookCommand,
   restoreCodexInterruptHook,
   verifyCodexInterruptHook,
   verifyCodexInterruptHookRestored,
@@ -65,6 +66,42 @@ test("Interrupt hook command is absolute, quoted, and bound to the exact applica
     '"C:\\Program Files\\Codex Web GPT\\bun.exe" "C:\\Program Files\\Codex Web GPT\\cli.js"'
       + ' "--home" "C:\\Users\\test\\Codex Web GPT" "hook" "interrupt"',
   );
+});
+
+test("replaces an orphan trust-state row for the hook slot before installing", () => {
+  const configPath = "/Users/test/.codex/config.toml";
+  const stateKey = `${resolve(configPath)}:interrupt:0:0`;
+  const stale = [
+    'model = "gpt-5.6-sol"',
+    "",
+    `[hooks.state.${JSON.stringify(stateKey)}]`,
+    'trusted_hash = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"',
+    "",
+  ].join("\n");
+  const installed = installCodexInterruptHookCommand(stale, configPath, "'/opt/runtime' 'hook' 'interrupt'");
+
+  expect(installed.text.match(new RegExp(
+    `\\[hooks\\.state\\.${JSON.stringify(stateKey).replace(/[\\^$.*+?()[\]{}|]/g, "\\$&")}\\]`,
+    "g",
+  ))?.length).toBe(1);
+  expect(installed.text).not.toContain("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+  verifyCodexInterruptHook(installed.text, installed.installed);
+});
+
+test("refuses to replace orphan interrupt trust state containing extra data", () => {
+  const configPath = "/Users/test/.codex/config.toml";
+  const stateKey = `${resolve(configPath)}:interrupt:0:0`;
+  const unsafe = [
+    `[hooks.state.${JSON.stringify(stateKey)}]`,
+    'trusted_hash = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"',
+    "approved = true",
+    "",
+  ].join("\n");
+  expect(() => installCodexInterruptHookCommand(
+    unsafe,
+    configPath,
+    "'/opt/runtime' 'hook' 'interrupt'",
+  )).toThrow("non-managed data");
 });
 
 test("Interrupt hook trust hash is deterministic and changes with its exact command", () => {
