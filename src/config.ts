@@ -75,6 +75,8 @@ export interface AppConfig {
   automaticAppName: string;
   manualAppName: typeof ZERO_RISK_CHATGPT_CONNECTOR_NAME;
   browserHost: BrowserHostMode;
+  /** True when the launcher browser lives on another machine while this machine owns the runtime. */
+  browserHostRemote?: boolean;
   browserInteractionMode: BrowserInteractionMode;
   browserHostDescriptorPath?: string;
   chromeExecutablePath: string;
@@ -384,6 +386,12 @@ function parseConfig(value: unknown, path: string): AppConfig {
   if (parsed.browserHost !== "managed-chrome" && parsed.browserHost !== "launcher") {
     throw new Error(`Invalid browserHost in ${path}`);
   }
+  if (parsed.browserHostRemote !== undefined && typeof parsed.browserHostRemote !== "boolean") {
+    throw new Error(`Invalid browserHostRemote in ${path}`);
+  }
+  if (parsed.browserHostRemote === true && parsed.browserHost !== "launcher") {
+    throw new Error(`Remote browser host requires launcher browserHost in ${path}`);
+  }
   const browserInteractionMode = parsed.browserInteractionMode ?? "automatic";
   if (browserInteractionMode !== "automatic" && browserInteractionMode !== "manual") {
     throw new Error(`Invalid browserInteractionMode in ${path}`);
@@ -393,6 +401,9 @@ function parseConfig(value: unknown, path: string): AppConfig {
   }
   if (browserInteractionMode === "manual" && parsed.browserHost !== "launcher") {
     throw new Error(`Zero Risk requires the launcher browser host in ${path}`);
+  }
+  if (browserInteractionMode === "manual" && parsed.browserHostRemote === true) {
+    throw new Error(`Remote browser host currently supports automatic interaction only in ${path}`);
   }
   if (!Number.isInteger(parsed.port) || parsed.port! < 1 || parsed.port! > 65_535) throw new Error(`Invalid port in ${path}`);
   if (!Number.isSafeInteger(parsed.contextWindow) || parsed.contextWindow! <= 0) {

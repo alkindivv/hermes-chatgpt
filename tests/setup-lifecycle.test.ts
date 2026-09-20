@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { launcherCapabilityProbeRequired, setupProxyIsReady } from "../src/setup";
+import { launcherCapabilityProbeRequired, launcherOwnsRuntime, setupProxyIsReady } from "../src/setup";
 
 const config = {
   mode: "browser-only" as const,
@@ -19,6 +19,13 @@ test("setup accepts only a matching daemon that is ready for new Codex turns", (
   expect(setupProxyIsReady({ ...ready, accepting_turns: false }, config)).toBe(false);
   expect(setupProxyIsReady({ ...ready, status: "degraded" }, config)).toBe(false);
   expect(setupProxyIsReady({ ...ready, version: "0.1.16" }, config)).toBe(false);
+});
+
+test("remote launcher browser keeps runtime ownership on the local machine", () => {
+  expect(launcherOwnsRuntime({ browserHost: "launcher" })).toBe(true);
+  expect(launcherOwnsRuntime({ browserHost: "launcher", browserHostRemote: false })).toBe(true);
+  expect(launcherOwnsRuntime({ browserHost: "launcher", browserHostRemote: true })).toBe(false);
+  expect(launcherOwnsRuntime({ browserHost: "managed-chrome" })).toBe(false);
 });
 
 test("launcher setup refreshes account capabilities only when missing or explicitly requested", () => {

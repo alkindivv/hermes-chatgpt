@@ -116,11 +116,20 @@ If that port is already occupied on the Mac, stop the conflicting local listener
 For an existing full-harness installation, run setup while the remote-browser link is alive:
 
 ```bash
-codex-chatgpt-web setup --full   --browser-host-descriptor "$HOME/.codex-chatgpt-web/runtime/remote-launcher-browser.json"   --acknowledge-unofficial
+codex-chatgpt-web setup --full \
+  --remote-browser-host-descriptor "$HOME/.codex-chatgpt-web/runtime/remote-launcher-browser.json" \
+  --restart-service \
+  --acknowledge-unofficial
 ```
 
+The dedicated remote option is important: it keeps runtime ownership on the Mac. The Mac installs
+or updates its local Responses daemon and tunnel service while using the launcher protocol only for
+the browser living on the VPS. Do not substitute `--browser-host-descriptor`; that option retains
+the upstream meaning that a local launcher owns the runtime.
+
 Existing reusable tunnel credentials are preserved by normal setup behavior. Restart the local
-Codex/ChatGPT desktop integration if setup reports that a restart is required.
+Codex/ChatGPT desktop integration once after this ownership migration so the native model route is
+reloaded.
 
 The resulting authority boundary is:
 

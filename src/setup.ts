@@ -49,6 +49,7 @@ export interface SetupOptions {
   port?: number;
   chromeExecutablePath?: string;
   browserHostDescriptorPath?: string;
+  remoteBrowserHostDescriptorPath?: string;
   refreshAccountCapabilities?: boolean;
   forceLogin?: boolean;
   autoApproveToolCalls?: boolean;
@@ -89,6 +90,12 @@ export interface DevProfileSetupResult {
 export interface ExistingFullSetupCredentials {
   tunnelId: boolean;
   runtimeKey: boolean;
+}
+
+export function launcherOwnsRuntime(
+  config: Pick<AppConfig, "browserHost" | "browserHostRemote">,
+): boolean {
+  return config.browserHost === "launcher" && config.browserHostRemote !== true;
 }
 
 export function launcherCapabilityProbeRequired(
@@ -135,6 +142,7 @@ function meaningfulRuntimeChange(before: AppConfig, after: AppConfig): boolean {
     automaticAppName: before.automaticAppName,
     manualAppName: before.manualAppName,
     browserHost: before.browserHost,
+    browserHostRemote: before.browserHostRemote,
     browserInteractionMode: before.browserInteractionMode,
     browserHostDescriptorPath: before.browserHostDescriptorPath,
     chromeExecutablePath: before.chromeExecutablePath,
@@ -164,6 +172,7 @@ function meaningfulRuntimeChange(before: AppConfig, after: AppConfig): boolean {
     automaticAppName: after.automaticAppName,
     manualAppName: after.manualAppName,
     browserHost: after.browserHost,
+    browserHostRemote: after.browserHostRemote,
     browserInteractionMode: after.browserInteractionMode,
     browserHostDescriptorPath: after.browserHostDescriptorPath,
     chromeExecutablePath: after.chromeExecutablePath,
@@ -261,12 +270,22 @@ function baseConfig(
     config.port = options.port;
   }
   if (options.chromeExecutablePath) config.chromeExecutablePath = options.chromeExecutablePath;
-  if (options.browserHostDescriptorPath) {
+  if (options.browserHostDescriptorPath && options.remoteBrowserHostDescriptorPath) {
+    throw new Error("Choose only one browser host descriptor");
+  }
+  if (options.remoteBrowserHostDescriptorPath) {
     config.browserHost = "launcher";
+    config.browserHostRemote = true;
+    config.browserHostDescriptorPath = options.remoteBrowserHostDescriptorPath;
+    config.brokerSocketPath = defaultBrokerEndpoint();
+  } else if (options.browserHostDescriptorPath) {
+    config.browserHost = "launcher";
+    delete config.browserHostRemote;
     config.browserHostDescriptorPath = options.browserHostDescriptorPath;
     config.brokerSocketPath = defaultBrokerEndpoint();
   } else if (options.chromeExecutablePath) {
     config.browserHost = "managed-chrome";
+    delete config.browserHostRemote;
     delete config.browserHostDescriptorPath;
   }
   if (options.autoApproveToolCalls !== undefined) config.autoApproveToolCalls = options.autoApproveToolCalls;
@@ -430,7 +449,7 @@ function prepareSetup(options: SetupOptions): PreparedSetup {
       ?? readCodexSubagentProtocol(existing?.subagentProtocol ?? "compatibility-v1"),
   });
   delete config.purpose;
-  const launcherOwned = config.browserHost === "launcher";
+  const launcherOwned = launcherOwnsRuntime(config);
   if (!launcherOwned && process.platform !== "darwin") {
     throw new Error(
       "Terminal-only managed Chrome setup currently requires macOS. "

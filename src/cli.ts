@@ -70,6 +70,8 @@ Setup options:
   --chrome PATH                Google Chrome/Chromium executable used for account login
   --browser-host-descriptor PATH
                                Use the embedded launcher browser described by this owner-only file
+  --remote-browser-host-descriptor PATH
+                               Use a remote launcher browser while keeping daemon/tools local
   --refresh-account-capabilities
                                Re-read the authenticated account's available Web models
   --tunnel-id ID               Existing OpenAI tunnel id (full mode)
@@ -299,8 +301,15 @@ async function setupCommand(args: string[]): Promise<void> {
   const runtimeKeyFile = takeOption(args, "--runtime-key-file");
   const chrome = takeOption(args, "--chrome");
   const browserHostDescriptorPath = takeOption(args, "--browser-host-descriptor");
+  const remoteBrowserHostDescriptorPath = takeOption(args, "--remote-browser-host-descriptor");
+  if (browserHostDescriptorPath && remoteBrowserHostDescriptorPath) {
+    throw new Error("Choose only one browser host descriptor option");
+  }
   if (chrome) options.chromeExecutablePath = chrome;
   if (browserHostDescriptorPath) options.browserHostDescriptorPath = browserHostDescriptorPath;
+  if (remoteBrowserHostDescriptorPath) {
+    options.remoteBrowserHostDescriptorPath = remoteBrowserHostDescriptorPath;
+  }
   options.refreshAccountCapabilities = takeFlag(args, "--refresh-account-capabilities");
   if (tunnelId) options.tunnelId = tunnelId;
   if (runtimeKeyFile) options.runtimeKeyFile = runtimeKeyFile;
@@ -548,7 +557,7 @@ async function uninstallCommand(args: string[]): Promise<void> {
     throw new Error("Uninstall cancelled");
   }
   const config = existsSync(getConfigPath()) ? loadConfig() : undefined;
-  if (config?.browserHost === "launcher" && !launcherControl) {
+  if (config?.browserHost === "launcher" && config.browserHostRemote !== true && !launcherControl) {
     throw new Error(
       "Launcher-owned integration must be removed from Codex Web GPT Settings so the active runtime can be drained safely.",
     );
@@ -556,7 +565,9 @@ async function uninstallCommand(args: string[]): Promise<void> {
   if (!config && process.platform === "darwin" && getServiceStatus().installed) {
     throw new Error("Service exists but configuration is missing; refusing an unverifiable uninstall");
   }
-  const launcherRuntimeStopped = config?.browserHost === "launcher" && launcherControl;
+  const launcherRuntimeStopped = config?.browserHost === "launcher"
+    && config.browserHostRemote !== true
+    && launcherControl;
   if (config && process.platform === "darwin" && !launcherRuntimeStopped) await assertServiceIdle(config);
   if (config?.mode === "full" && !launcherRuntimeStopped) {
     if (process.platform === "darwin") await uninstallTunnelService();
