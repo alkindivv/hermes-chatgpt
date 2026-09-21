@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -50,20 +51,36 @@ class ProviderContractTest(unittest.TestCase):
                 )
                 self.assertEqual(profile.model_capabilities["chatgpt-web/high"].get("context_window"), 90000)
                 self.assertTrue(profile.model_capabilities["chatgpt-web/high"].get("supports_tools"))
-                one = profile.build_extra_body(session_id="same-session")
+                with patch(
+                    "agent.relay_runtime.current_turn",
+                    return_value=SimpleNamespace(
+                        turn_id="relay-turn-native-1",
+                        lease=SimpleNamespace(session_id="same-session"),
+                    ),
+                ):
+                    one = profile.build_extra_body(session_id="same-session")
+                    self.assertEqual(one["hermes"]["turn_id"], "relay-turn-native-1")
+                    self.assertNotIn("turn_id", profile.build_extra_body())
+                    self.assertNotIn(
+                        "turn_id",
+                        profile.build_extra_body(session_id="different-session")["hermes"],
+                    )
                 self.assertEqual(one["hermes"]["session_id"], "same-session")
                 with patch.dict(os.environ, {"HERMES_HOME": str(home_b)}):
                     two = profile.build_extra_body(session_id="same-session")
                 three = profile.build_extra_body(session_id="same-session")
                 self.assertNotEqual(one["hermes"]["profile_id"], two["hermes"]["profile_id"])
-                self.assertEqual(one, three)
+                self.assertEqual(
+                    {k: v for k, v in one["hermes"].items() if k != "turn_id"},
+                    three["hermes"],
+                )
                 from hermes_constants import set_hermes_home_override, reset_hermes_home_override
                 scope = set_hermes_home_override(home_b)
                 try:
                     self.assertEqual(profile.build_extra_body(session_id="same-session"), two)
                 finally:
                     reset_hermes_home_override(scope)
-                self.assertEqual(profile.build_extra_body(session_id="same-session"), one)
+                self.assertEqual(profile.build_extra_body(session_id="same-session"), three)
                 from agent.models_dev import get_model_capabilities
                 capabilities = get_model_capabilities("hermes-chatgpt", "chatgpt-web/high", allow_network=False)
                 self.assertEqual(capabilities.context_window, 90000)

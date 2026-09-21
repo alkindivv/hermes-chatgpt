@@ -58,8 +58,19 @@ test("real HTTP -> browser adapter -> MCP broker -> outer tool result -> same br
       if (!r.ok) throw new Error(JSON.stringify(data));
       return data;
     });
-    const initial = { model: "chatgpt-web/high", hermes: { profile_id: "A", session_id: "native-Hermes-session" },
-      messages: [{ role: "system", content: "You are Hermes. Use the native tools." }, { role: "user", content: "Read proof.txt" }],
+    const initial = {
+      model: "chatgpt-web/high",
+      hermes: {
+        profile_id: "A",
+        session_id: "native-Hermes-session",
+        turn_id: "relay-turn-native-1",
+      },
+      messages: [
+        { role: "system", content: "You are Hermes. Use the native tools." },
+        { role: "user", content: "Earlier context that may be compacted" },
+        { role: "assistant", content: "Earlier work completed" },
+        { role: "user", content: "Read proof.txt" },
+      ],
       tools: [{ type: "function", function: { name: "read_file", description: "Read using the active native Hermes backend", parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] } } }],
     };
     const first = await send(initial);
@@ -70,8 +81,19 @@ test("real HTTP -> browser adapter -> MCP broker -> outer tool result -> same br
     // The outer agent performs the action, not the TypeScript bridge or browser.
     writeFileSync(join(root, "proof.txt"), "NATIVE_HERMES_RESULT");
     const nativeResult = readFileSync(join(root, JSON.parse(call.function.arguments).path), "utf8");
-    const final = await send({ ...initial, messages: [...initial.messages, first.choices[0].message,
-      { role: "tool", tool_call_id: call.id, content: nativeResult }] });
+    // Hermes can compact/rewrite older history between a tool call and the matching
+    // tool result. The Relay turn id must keep this bound to the same live browser execution.
+    const final = await send({
+      ...initial,
+      messages: [
+        { role: "system", content: "Rebuilt system prompt after compression" },
+        { role: "user", content: "Summary of compacted earlier context" },
+        { role: "assistant", content: "Acknowledged compacted history" },
+        { role: "user", content: "Read proof.txt" },
+        first.choices[0].message,
+        { role: "tool", tool_call_id: call.id, content: nativeResult },
+      ],
+    });
     expect(final.choices[0].finish_reason).toBe("stop");
     expect(final.choices[0].message.content).toContain("Verified NATIVE_HERMES_RESULT");
     expect(browserStarts).toBe(1);

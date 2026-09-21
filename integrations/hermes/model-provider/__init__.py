@@ -174,6 +174,24 @@ class HermesChatGPTProfile(ProviderProfile):
         metadata = {"profile_id": profile_id}
         if session_id:
             metadata["session_id"] = session_id
+            # Hermes 0.21.3 exposes one stable Relay turn id across every API/tool
+            # round of the same human turn, including in-place context compression.
+            # Carry it only on session-bound main requests. Auxiliary calls invoke
+            # build_extra_body without session_id and remain intentionally stateless.
+            try:
+                from agent.relay_runtime import current_turn
+                turn = current_turn()
+                lease = getattr(turn, "lease", None)
+                turn_id = str(getattr(turn, "turn_id", "") or "").strip()
+                if (
+                    turn_id
+                    and str(getattr(lease, "session_id", "") or "") == session_id
+                ):
+                    metadata["turn_id"] = turn_id
+            except Exception:
+                # Older Hermes releases have no Relay turn context; the bridge keeps
+                # its content-derived fallback identity for those installations.
+                pass
         # Auxiliary requests without a session are explicitly stateless. The
         # bridge refuses tool-enabled requests that lack session provenance.
         return {"hermes": metadata}

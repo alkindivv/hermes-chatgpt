@@ -27,6 +27,41 @@ describe("Hermes request boundary", () => {
     expect(chatGptConversationKey(second, "n")).toBeUndefined();
   });
 
+  test("Relay turn identity survives in-place Hermes compression during one tool round", () => {
+    const current = "Finish the current content task";
+    const before = {
+      ...request([
+        { role: "system", content: "Large original system prompt" },
+        { role: "user", content: "Earlier request" },
+        { role: "assistant", content: "Earlier answer" },
+        { role: "user", content: current },
+      ]),
+      hermes: { session_id: "session-compress", profile_id: "profile-A", turn_id: "relay-turn-42" },
+    };
+    const after = {
+      ...request([
+        { role: "system", content: "Rebuilt system prompt after compaction" },
+        { role: "user", content: "Summary of much earlier context" },
+        { role: "assistant", content: "Acknowledged compacted history" },
+        { role: "user", content: current },
+      ]),
+      hermes: { session_id: "session-compress", profile_id: "profile-A", turn_id: "relay-turn-42" },
+    };
+    const first = parseHermesRequest(before, "backend-A");
+    const compacted = parseHermesRequest(after, "backend-A");
+
+    expect(extractChatGptTurnIdentity(compacted)).toEqual(extractChatGptTurnIdentity(first));
+    expect(chatGptTurnExecutionKey(compacted)).toBe(chatGptTurnExecutionKey(first));
+    expect(compacted._hermes?.revisions.at(-1)?.itemId)
+      .toBe(first._hermes?.revisions.at(-1)?.itemId);
+
+    const nextTurn = parseHermesRequest({
+      ...after,
+      hermes: { ...after.hermes, turn_id: "relay-turn-43" },
+    }, "backend-A");
+    expect(chatGptTurnExecutionKey(nextTurn)).not.toBe(chatGptTurnExecutionKey(first));
+  });
+
   test("session, profile, endpoint, repeated prompts and compressed history cannot collide", () => {
     const base = request();
     const key = (body: unknown, ns = "backend-A") => chatGptTurnExecutionKey(parseHermesRequest(body, ns));

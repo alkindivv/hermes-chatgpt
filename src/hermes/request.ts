@@ -29,7 +29,11 @@ const schema = z.object({
   tool_choice: z.enum(["auto", "none"]).optional(),
   stream: z.boolean().optional(), stream_options: z.object({ include_usage: z.boolean().optional() }).optional(),
   parallel_tool_calls: z.boolean().optional(),
-  hermes: z.object({ session_id: z.string().min(1).max(1024).optional(), profile_id: z.string().min(1).max(1024).optional() }).optional(),
+  hermes: z.object({
+    session_id: z.string().min(1).max(1024).optional(),
+    profile_id: z.string().min(1).max(1024).optional(),
+    turn_id: z.string().min(1).max(1024).optional(),
+  }).optional(),
   response_format: z.union([
     z.object({ type: z.literal("text") }),
     z.object({ type: z.literal("json_object") }),
@@ -74,6 +78,7 @@ export function parseHermesRequest(value: unknown, namespace: string): CodexPars
   const threadId = hash(["hermes", namespace, body.hermes?.profile_id ?? "default", body.hermes?.session_id ?? randomUUID()]);
   const input: Array<Record<string, unknown>> = [];
   const revisions: ChatGptTurnUserRevision[] = [];
+  let lastUserInputIndex: number | undefined;
   // Hermes intentionally permits a provider to reuse a tool_call_id after the previous call
   // has been answered. Some OpenAI-compatible backends emit one constant id for many sequential
   // calls, and Hermes' own pre-call sanitizer uses outstanding-call semantics for that reason.
@@ -128,6 +133,7 @@ export function parseHermesRequest(value: unknown, namespace: string): CodexPars
       const itemId = `hermes_user_${hash(taskPrefix)}`;
       revisions.push({ itemId, content });
       input.push({ type: "message", role: m.role, id: itemId, content });
+      lastUserInputIndex = input.length - 1;
     } else if (content.length) {
       input.push({ type: "message", role: m.role, content });
     }
@@ -155,6 +161,27 @@ export function parseHermesRequest(value: unknown, namespace: string): CodexPars
   }
   if (!revisions.length) throw new Error("Hermes history requires a user message");
   if (pending.size) throw new Error("Hermes history has missing tool results");
+
+  // Hermes may rewrite older history in-place during context compression while the
+  // current human turn is still waiting on a browser tool result. A content-derived
+  // current item id would change after that rewrite and falsely look like steering,
+  // causing the retained ChatGPT execution to be superseded. Hermes 0.21.3 supplies
+  // a Relay turn id that is stable across every API/tool round of the same turn.
+  const relayTurnId = body.hermes?.session_id ? body.hermes?.turn_id : undefined;
+  const stableTurnId = relayTurnId
+    ? hash(["hermes-turn", threadId, relayTurnId])
+    : undefined;
+  if (stableTurnId && lastUserInputIndex !== undefined) {
+    const itemId = `hermes_user_${hash(["hermes-current-user", stableTurnId])}`;
+    revisions[revisions.length - 1] = {
+      ...revisions[revisions.length - 1],
+      itemId,
+    };
+    input[lastUserInputIndex] = {
+      ...input[lastUserInputIndex],
+      id: itemId,
+    };
+  }
   const format = body.response_format;
   const text = format?.type === "json_schema" ? { format: { type: "json_schema", ...format.json_schema } }
     : format?.type === "json_object" ? { format: { type: "json_schema", name: "hermes_json", strict: false, schema: { type: "object" } } }
@@ -169,7 +196,10 @@ export function parseHermesRequest(value: unknown, namespace: string): CodexPars
   const cwd = process.cwd();
   parsed.context.tools ??= [];
   parsed._hermes = {
-    identity: { threadId, turnId: hash([threadId, revisions.at(-1)!.itemId]) },
+    identity: {
+      threadId,
+      turnId: stableTurnId ?? hash([threadId, revisions.at(-1)!.itemId]),
+    },
     revisions,
     environment: { cwd, roots: [cwd], writableRoots: [], sandboxPolicy: { type: "external", executor: "hermes" }, tools: parsed.context.tools },
   };
