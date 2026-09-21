@@ -8,7 +8,9 @@ Type=simple
 User=ubuntu
 Group=ubuntu
 Environment=HOME=/home/ubuntu
-ExecStartPre=/bin/sh -c 'i=0; while [ "$i" -lt 45 ]; do /home/ubuntu/hermes-chatgpt-runtime/bin/codex-chatgpt-web browser check && exit 0; i=$((i+1)); sleep 2; done; exit 1'
+# hermes serve performs launcher liveness validation itself. Do not run the full
+# authenticated browser inspection here: the shared Electron host may be healthy but busy
+# serving an independent Codex turn, and startup must not fail merely because that turn is active.
 ExecStart=/home/ubuntu/hermes-chatgpt-runtime/bin/codex-chatgpt-web hermes serve
 Restart=on-failure
 RestartSec=5
