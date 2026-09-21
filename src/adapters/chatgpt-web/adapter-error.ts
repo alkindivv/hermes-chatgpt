@@ -62,6 +62,30 @@ export function chatGptStoppedThinkingError(): ChatGptWebAdapterError {
   );
 }
 
+export function chatGptBrowserCapacityError(limit: number): ChatGptWebAdapterError {
+  return new ChatGptWebAdapterError(
+    `ChatGPT Web supports at most ${limit} simultaneous browser turns; wait for an active turn to finish before starting another.`,
+    {
+      status: 503,
+      errorType: "server_error",
+      code: "chatgpt_browser_capacity",
+      retryable: true,
+    },
+  );
+}
+
+export function chatGptSessionRegistryFullError(limit: number): ChatGptWebAdapterError {
+  return new ChatGptWebAdapterError(
+    `ChatGPT web session registry is full (${limit} entries); retry after settled sessions retire.`,
+    {
+      status: 503,
+      errorType: "server_error",
+      code: "chatgpt_session_registry_full",
+      retryable: true,
+    },
+  );
+}
+
 export function chatGptRetainedConversationUnavailableError(): ChatGptWebAdapterError {
   return new ChatGptWebAdapterError(
     "The retained ChatGPT conversation is no longer available.",

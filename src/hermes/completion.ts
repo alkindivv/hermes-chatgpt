@@ -2,11 +2,27 @@ import { randomUUID } from "node:crypto";
 import type { AdapterEvent, CodexUsage } from "../types";
 
 export class HermesCompletionError extends Error {
-  constructor(message: string, readonly status = 502, readonly code = "hermes_backend_error") { super(message); }
+  constructor(
+    message: string,
+    readonly status = 502,
+    readonly code = "hermes_backend_error",
+    readonly errorType = "server_error",
+    readonly retryable?: boolean,
+  ) { super(message); }
 }
 
-export function completionError(error: unknown): { error: { message: string; type: string; code: string } } {
-  return { error: { message: error instanceof Error ? error.message : String(error), type: "server_error", code: error instanceof HermesCompletionError ? error.code : "hermes_backend_error" } };
+export function completionError(error: unknown): {
+  error: { message: string; type: string; code: string; retryable?: boolean };
+} {
+  const structured = error instanceof HermesCompletionError ? error : undefined;
+  return {
+    error: {
+      message: error instanceof Error ? error.message : String(error),
+      type: structured?.errorType ?? "server_error",
+      code: structured?.code ?? "hermes_backend_error",
+      ...(structured?.retryable === undefined ? {} : { retryable: structured.retryable }),
+    },
+  };
 }
 
 function usage(value?: CodexUsage) {
@@ -38,7 +54,15 @@ export class HermesCompletion {
   }
 
   accept(event: AdapterEvent): Record<string, unknown> | undefined {
-    if (event.type === "error") throw new HermesCompletionError(event.message, event.status ?? 502, event.code);
+    if (event.type === "error") {
+      throw new HermesCompletionError(
+        event.message,
+        event.status ?? 502,
+        event.code,
+        event.errorType ?? "server_error",
+        event.retryable,
+      );
+    }
     if (this.terminal) throw new HermesCompletionError("Adapter emitted data after completion");
     if (event.type === "text_delta" || event.type === "thinking_delta" || event.type === "tool_call_delta") {
       const text = event.type === "text_delta" ? event.text : event.type === "thinking_delta" ? event.thinking : event.arguments;

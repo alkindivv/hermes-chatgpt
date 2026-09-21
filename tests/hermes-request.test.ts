@@ -53,6 +53,35 @@ describe("Hermes request boundary", () => {
     expect(compiled.text).not.toContain("Codex-supplied environment context blocks");
   });
 
+  test("multimodal tool results preserve text, images and exact call pairing", () => {
+    const parsed = parseHermesRequest(request([
+      { role: "user", content: "Inspect the tool image" },
+      { role: "assistant", content: null, tool_calls: [{
+        id: "call_image",
+        type: "function",
+        function: { name: "vision_tool", arguments: "{}" },
+      }] },
+      {
+        role: "tool",
+        tool_call_id: "call_image",
+        content: [
+          { type: "text", text: "Screenshot caption" },
+          { type: "image_url", image_url: { url: "data:image/png;base64,aGVsbG8=", detail: "high" } },
+        ],
+      },
+    ]), "vision");
+
+    expect(parsed.context.messages.at(-1)).toEqual(expect.objectContaining({
+      role: "toolResult",
+      toolCallId: "call_image",
+      toolName: "vision_tool",
+      content: [
+        { type: "text", text: "Screenshot caption" },
+        { type: "image", imageUrl: "data:image/png;base64,aGVsbG8=", detail: "high" },
+      ],
+    }));
+  });
+
   test("multimodal messages and JSON output contracts survive conversion", () => {
     const parsed = parseHermesRequest({ ...request([{ role: "user", content: [
       { type: "text", text: "Inspect" }, { type: "image_url", image_url: { url: "data:image/png;base64,aGVsbG8=", detail: "high" } },

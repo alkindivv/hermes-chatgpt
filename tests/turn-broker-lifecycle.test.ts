@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { ChatGptTextFeed, ChatGptTraceFeed, ChatGptTurnSessions } from "../src/adapters/chatgpt-web/turn-execution";
+import { ChatGptWebAdapterError } from "../src/adapters/chatgpt-web/adapter-error";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { createServer, type Socket } from "node:net";
 import { tmpdir } from "node:os";
@@ -158,7 +159,19 @@ test("five active turns coexist and a sixth fails closed", () => {
   ));
   expect(sessions.activeCount()).toBe(5);
   expect(cancelled).toBe(0);
-  expect(() => sessions.getOrCreate("turn-6", runtime)).toThrow("at most 5 simultaneous browser turns");
+  let capacityError: unknown;
+  try {
+    sessions.getOrCreate("turn-6", runtime);
+  } catch (error) {
+    capacityError = error;
+  }
+  expect(capacityError).toBeInstanceOf(ChatGptWebAdapterError);
+  expect(capacityError).toMatchObject({
+    status: 503,
+    errorType: "server_error",
+    code: "chatgpt_browser_capacity",
+    retryable: true,
+  });
 
   expect(sessions.getOrCreate("turn-3", () => {
     throw new Error("an in-flight turn must be reused");

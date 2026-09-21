@@ -1,5 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
+import { inspectLauncherBrowserHost } from "../launcher-browser-host";
 import { createChatGptWebAdapter } from "../adapters/chatgpt-web";
+import { ChatGptWebAdapterError } from "../adapters/chatgpt-web/adapter-error";
 import { closeChatGptBrowserWorkers } from "../adapters/chatgpt-web/browser-worker";
 import { TurnBroker } from "../adapters/chatgpt-web/turn-broker";
 import { chatGptTurnSessions } from "../adapters/chatgpt-web/turn-execution";
@@ -18,6 +20,7 @@ export interface HermesServerConfig { runtime: AppConfig; namespace: string; api
 
 export async function startHermesServer(config: HermesServerConfig, dependencies: {
   adapterFactory?: (provider: CodexProviderConfig) => ProviderAdapter;
+  inspectBrowser?: (descriptorPath: string) => Promise<unknown>;
 } = {}) {
   const { runtime } = config;
   if (runtime.host !== "127.0.0.1") throw new Error("Hermes inference must bind to 127.0.0.1");
@@ -33,6 +36,7 @@ export async function startHermesServer(config: HermesServerConfig, dependencies
   const broker = TurnBroker.forSocket(runtime.brokerSocketPath);
   await broker.listen();
   const factory = dependencies.adapterFactory ?? createChatGptWebAdapter;
+  const inspectBrowser = dependencies.inspectBrowser ?? inspectLauncherBrowserHost;
   const active = new Map<AbortController, Promise<void>>();
   const routes = availableChatGptWebModelRoutes(runtime).filter(r => r.interactionMode === "automatic" && r.backendModel === CHATGPT_WEB_BACKEND_MODEL);
   let closing = false;
@@ -46,12 +50,52 @@ export async function startHermesServer(config: HermesServerConfig, dependencies
         if (request.method === "GET" && url.pathname === "/healthz") return Response.json({ service: "hermes-chatgpt", version: VERSION, accepting_turns: !closing });
         if (!authorized(request)) return Response.json({ error: { type: "authentication_error", message: "Unauthorized" } }, { status: 401 });
         if (closing) return Response.json({ error: { message: "Hermes backend is shutting down" } }, { status: 503 });
-        if (request.method === "GET" && url.pathname === "/v1/models") {
-          return Response.json({ object: "list", data: routes.map(route => ({
-            id: route.slug, object: "model", created: 0, owned_by: "hermes-chatgpt",
+        const modelCatalog = () => ({
+          object: "list",
+          data: routes.map(route => ({
+            id: route.slug,
+            object: "model",
+            created: 0,
+            owned_by: "hermes-chatgpt",
             context_window: route.interactionMode === "automatic"
-              ? resolveChatGptWebContextLimits(route.backendModel, route.adapterEffort, runtime).contextWindow : undefined,
-          })) });
+              ? resolveChatGptWebContextLimits(route.backendModel, route.adapterEffort, runtime).contextWindow
+              : undefined,
+          })),
+        });
+        if (request.method === "GET" && url.pathname === "/v1/models") {
+          return Response.json(modelCatalog());
+        }
+        if (request.method === "GET" && url.pathname === "/v1/models/verified") {
+          // An active bridge-owned browser turn is stronger liveness evidence than a maintenance
+          // probe: the launcher already authenticated and leased a ChatGPT surface to this runtime.
+          // When idle, verify the authenticated launcher surface before claiming the provider is
+          // healthy. This keeps model discovery/health honest without racing an active turn.
+          if (chatGptTurnSessions.activeCount() === 0) {
+            const descriptorPath = runtime.browserHostDescriptorPath;
+            if (!descriptorPath) {
+              return Response.json({
+                error: {
+                  type: "server_error",
+                  code: "chatgpt_browser_unavailable",
+                  message: "Hermes ChatGPT browser host descriptor is unavailable",
+                  retryable: true,
+                },
+              }, { status: 503 });
+            }
+            try {
+              await inspectBrowser(descriptorPath);
+            } catch (error) {
+              return Response.json({
+                error: {
+                  type: "server_error",
+                  code: "chatgpt_browser_unavailable",
+                  message: error instanceof Error ? error.message : String(error),
+                  retryable: true,
+                },
+              }, { status: 503 });
+            }
+          }
+          return Response.json(modelCatalog());
         }
         if (request.method !== "POST" || url.pathname !== "/v1/chat/completions") return Response.json({ error: { message: "Not found" } }, { status: 404 });
         let raw: unknown;
@@ -60,8 +104,10 @@ export async function startHermesServer(config: HermesServerConfig, dependencies
         try {
           raw = await readJsonRequestBody(request);
           parsed = parseHermesRequest(raw, config.namespace);
-          model = parsed.modelId;
-          if (!routes.some(r => r.slug === model)) throw new Error(`Hermes model is not enabled: ${model}`);
+          model = String((raw as { model?: unknown }).model ?? parsed.modelId);
+          if (!routes.some(r => r.slug === parsed.modelId)) {
+            throw new Error(`Hermes model is not enabled: ${model}`);
+          }
           routeChatGptWebRequest(parsed, runtime);
         } catch (error) {
           return Response.json({ error: { type: "invalid_request_error", message: error instanceof Error ? error.message : String(error) } }, { status: 400 });
@@ -85,7 +131,18 @@ export async function startHermesServer(config: HermesServerConfig, dependencies
         const run = Promise.resolve().then(async () => {
           if (!controller.signal.aborted) await factory(provider).runTurn(parsed, { headers: new Headers(), abortSignal: controller.signal }, emit);
         }).catch(error => {
-          emit({ type: "error", message: error instanceof Error ? error.message : String(error) });
+          if (error instanceof ChatGptWebAdapterError) {
+            emit({
+              type: "error",
+              message: error.message,
+              status: error.status,
+              errorType: error.errorType,
+              code: error.code,
+              retryable: error.retryable,
+            });
+          } else {
+            emit({ type: "error", message: error instanceof Error ? error.message : String(error) });
+          }
         }).finally(() => {
           clearInterval(keepAlive);
           queue.close();

@@ -126,7 +126,7 @@ export async function runHermesCommand(args: string[], explicitHome?: string): P
     const config = loadHermesConfig(home);
     let health: unknown;
     try {
-      const response = await fetch(`http://127.0.0.1:${config.runtime.port}/v1/models`, { headers: { authorization: `Bearer ${readHermesApiToken(config.apiKeyFile)}` }, signal: AbortSignal.timeout(5_000) });
+      const response = await fetch(`http://127.0.0.1:${config.runtime.port}/v1/models/verified`, { headers: { authorization: `Bearer ${readHermesApiToken(config.apiKeyFile)}` }, signal: AbortSignal.timeout(10_000) });
       health = response.ok ? { ready: true, models: (await response.json() as { data: unknown }).data } : { ready: false, status: response.status };
     } catch { health = { ready: false }; }
     console.log(JSON.stringify({ home, connector: HERMES_CONNECTOR_NAME, port: config.runtime.port, health }, null, 2));

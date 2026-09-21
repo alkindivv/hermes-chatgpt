@@ -44,6 +44,50 @@ test("Hermes endpoint authenticates before dispatch and catalog never needs Code
   expect(called).toBe(1);
 });
 
+test("verified model catalog proves browser health when idle", async () => {
+  let inspected: string[] = [];
+  const cfg = config();
+  cfg.runtime.browserHost = "launcher";
+  cfg.runtime.browserHostDescriptorPath = "/test/launcher-browser.json";
+  const host = await startHermesServer(cfg, {
+    adapterFactory: () => adapter([{ type: "text_delta", text: "unused" }, { type: "done", stopReason: "stop" }]),
+    inspectBrowser: async path => { inspected.push(path); },
+  });
+  close.push(host.close);
+  const base = `http://127.0.0.1:${host.server.port}`;
+  const response = await fetch(`${base}/v1/models/verified`, {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  expect(response.status).toBe(200);
+  expect((await response.json() as any).data.map((m: any) => m.id))
+    .toEqual(["chatgpt-web/light", "chatgpt-web/medium", "chatgpt-web/high"]);
+  expect(inspected).toEqual(["/test/launcher-browser.json"]);
+});
+
+test("verified model catalog reports browser health failures instead of a false healthy catalog", async () => {
+  const cfg = config();
+  cfg.runtime.browserHost = "launcher";
+  cfg.runtime.browserHostDescriptorPath = "/test/launcher-browser.json";
+  const host = await startHermesServer(cfg, {
+    adapterFactory: () => adapter([{ type: "done", stopReason: "stop" }]),
+    inspectBrowser: async () => { throw new Error("ChatGPT session expired"); },
+  });
+  close.push(host.close);
+  const response = await fetch(
+    `http://127.0.0.1:${host.server.port}/v1/models/verified`,
+    { headers: { authorization: `Bearer ${token}` } },
+  );
+  expect(response.status).toBe(503);
+  expect(await response.json()).toMatchObject({
+    error: {
+      type: "server_error",
+      code: "chatgpt_browser_unavailable",
+      retryable: true,
+      message: "ChatGPT session expired",
+    },
+  });
+});
+
 test("streaming preserves reasoning, text, indexed tool arguments and usage without successful error masking", async () => {
   const events: AdapterEvent[] = [
     { type: "heartbeat" }, { type: "thinking_delta", thinking: "Visible reasoning summary" },
@@ -64,16 +108,132 @@ test("streaming preserves reasoning, text, indexed tool arguments and usage with
   expect(text).toContain("data: [DONE]");
 });
 
-test("upstream errors stay errors for JSON and SSE and incomplete output is not reported as stop", async () => {
-  const host = await startHermesServer(config(), { adapterFactory: () => adapter([{ type: "error", message: "Session expired", status: 401, code: "session_expired", retryable: false }]) });
+test("parallel tool batches retain independent ids and OpenAI finish semantics", async () => {
+  const events: AdapterEvent[] = [
+    { type: "tool_call_start", id: "call_a", name: "read_file" },
+    { type: "tool_call_delta", arguments: '{"path":"a.txt"}' },
+    { type: "tool_call_end" },
+    { type: "tool_call_start", id: "call_b", name: "read_file" },
+    { type: "tool_call_delta", arguments: '{"path":"b.txt"}' },
+    { type: "tool_call_end" },
+    { type: "done", stopReason: "tool_use", endTurn: false },
+  ];
+  const host = await startHermesServer(config(), { adapterFactory: () => adapter(events) });
+  close.push(host.close);
+  const response = await send(`http://127.0.0.1:${host.server.port}`, {
+    ...prompt,
+    parallel_tool_calls: true,
+  });
+  expect(response.status).toBe(200);
+  const body = await response.json() as any;
+  expect(body.choices[0].finish_reason).toBe("tool_calls");
+  expect(body.choices[0].message.tool_calls).toEqual([
+    {
+      id: "call_a",
+      type: "function",
+      function: { name: "read_file", arguments: '{"path":"a.txt"}' },
+    },
+    {
+      id: "call_b",
+      type: "function",
+      function: { name: "read_file", arguments: '{"path":"b.txt"}' },
+    },
+  ]);
+});
+
+test("structured output contract reaches the adapter without changing native model identity", async () => {
+  let observed: any;
+  const host = await startHermesServer(config(), {
+    adapterFactory: () => ({
+      name: "structured",
+      async runTurn(parsed, _incoming, emit) {
+        observed = parsed.options.outputFormat;
+        emit({ type: "text_delta", text: '{"ok":true}' });
+        emit({ type: "done", stopReason: "stop" });
+      },
+    }),
+  });
+  close.push(host.close);
+  const response = await send(`http://127.0.0.1:${host.server.port}`, {
+    ...prompt,
+    response_format: {
+      type: "json_schema",
+      json_schema: {
+        name: "result",
+        strict: true,
+        schema: {
+          type: "object",
+          properties: { ok: { type: "boolean" } },
+          required: ["ok"],
+          additionalProperties: false,
+        },
+      },
+    },
+  });
+  expect(response.status).toBe(200);
+  expect(observed).toMatchObject({ type: "json_schema", name: "result", strict: true });
+  expect((await response.json() as any).model).toBe("chatgpt-web/high");
+});
+
+test("upstream errors stay structured for JSON and SSE and incomplete output is not reported as stop", async () => {
+  const host = await startHermesServer(config(), { adapterFactory: () => adapter([{
+    type: "error",
+    message: "Session expired",
+    status: 401,
+    errorType: "authentication_error",
+    code: "chatgpt_session_expired",
+    retryable: false,
+  }]) });
   close.push(host.close);
   const base = `http://127.0.0.1:${host.server.port}`;
   const response = await send(base, prompt);
   expect(response.status).toBe(401);
-  expect(await response.json()).toMatchObject({ error: { message: "Session expired", code: "session_expired" } });
+  expect(await response.json()).toMatchObject({
+    error: {
+      message: "Session expired",
+      type: "authentication_error",
+      code: "chatgpt_session_expired",
+      retryable: false,
+    },
+  });
   const stream = await (await send(base, { ...prompt, stream: true })).text();
   expect(stream).toContain('"error"');
+  expect(stream).toContain('"type":"authentication_error"');
+  expect(stream).toContain('"code":"chatgpt_session_expired"');
+  expect(stream).toContain('"retryable":false');
   expect(stream).not.toContain('"finish_reason":"stop"');
+});
+
+test("client stream cancellation aborts the owned browser turn", async () => {
+  let began!: () => void;
+  const started = new Promise<void>(resolve => { began = resolve; });
+  let aborted!: () => void;
+  const sawAbort = new Promise<void>(resolve => { aborted = resolve; });
+  const host = await startHermesServer(config(), {
+    adapterFactory: () => ({
+      name: "client-cancel",
+      async runTurn(_parsed, incoming, emit) {
+        began();
+        emit({ type: "heartbeat" });
+        await new Promise<void>(resolve => incoming.abortSignal?.addEventListener("abort", () => {
+          aborted();
+          resolve();
+        }, { once: true }));
+      },
+    }),
+  });
+  close.push(host.close);
+  const response = await send(
+    `http://127.0.0.1:${host.server.port}`,
+    { ...prompt, stream: true },
+  );
+  await started;
+  const reader = response.body!.getReader();
+  await reader.cancel();
+  await Promise.race([
+    sawAbort,
+    new Promise((_, reject) => setTimeout(() => reject(new Error("cancel did not propagate")), 2_000)),
+  ]);
 });
 
 test("closing the backend aborts active requests", async () => {
