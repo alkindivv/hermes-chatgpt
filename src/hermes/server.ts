@@ -1,5 +1,8 @@
 import { timingSafeEqual } from "node:crypto";
-import { inspectLauncherBrowserHost } from "../launcher-browser-host";
+import {
+  inspectLauncherBrowserHost,
+  inspectLauncherBrowserHostLiveness,
+} from "../launcher-browser-host";
 import { createChatGptWebAdapter } from "../adapters/chatgpt-web";
 import { ChatGptWebAdapterError } from "../adapters/chatgpt-web/adapter-error";
 import { closeChatGptBrowserWorkers } from "../adapters/chatgpt-web/browser-worker";
@@ -18,9 +21,15 @@ import { parseHermesRequest } from "./request";
 
 export interface HermesServerConfig { runtime: AppConfig; namespace: string; apiToken: string }
 
+function launcherBusyWithOwnedTurn(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /^Launcher ChatGPT session could not be verified: ChatGPT browser is running Codex turn [A-Za-z0-9_-]+$/.test(message);
+}
+
 export async function startHermesServer(config: HermesServerConfig, dependencies: {
   adapterFactory?: (provider: CodexProviderConfig) => ProviderAdapter;
   inspectBrowser?: (descriptorPath: string) => Promise<unknown>;
+  inspectBrowserLiveness?: (descriptorPath: string) => Promise<unknown>;
 } = {}) {
   const { runtime } = config;
   if (runtime.host !== "127.0.0.1") throw new Error("Hermes inference must bind to 127.0.0.1");
@@ -37,6 +46,11 @@ export async function startHermesServer(config: HermesServerConfig, dependencies
   await broker.listen();
   const factory = dependencies.adapterFactory ?? createChatGptWebAdapter;
   const inspectBrowser = dependencies.inspectBrowser ?? inspectLauncherBrowserHost;
+  const inspectBrowserLiveness = dependencies.inspectBrowserLiveness
+    ?? ((descriptorPath: string) => inspectLauncherBrowserHostLiveness(
+      descriptorPath,
+      { expectedProfile: "production" },
+    ));
   const active = new Map<AbortController, Promise<void>>();
   const routes = availableChatGptWebModelRoutes(runtime).filter(r => r.interactionMode === "automatic" && r.backendModel === CHATGPT_WEB_BACKEND_MODEL);
   let closing = false;
@@ -85,14 +99,34 @@ export async function startHermesServer(config: HermesServerConfig, dependencies
             try {
               await inspectBrowser(descriptorPath);
             } catch (error) {
-              return Response.json({
-                error: {
-                  type: "server_error",
-                  code: "chatgpt_browser_unavailable",
-                  message: error instanceof Error ? error.message : String(error),
-                  retryable: true,
-                },
-              }, { status: 503 });
+              // A shared Electron host may already be serving an independent Codex turn.
+              // That turn is positive authentication/liveness evidence; do not report the
+              // provider unhealthy merely because the maintenance surface cannot be inspected.
+              if (launcherBusyWithOwnedTurn(error)) {
+                try {
+                  await inspectBrowserLiveness(descriptorPath);
+                } catch (livenessError) {
+                  return Response.json({
+                    error: {
+                      type: "server_error",
+                      code: "chatgpt_browser_unavailable",
+                      message: livenessError instanceof Error
+                        ? livenessError.message
+                        : String(livenessError),
+                      retryable: true,
+                    },
+                  }, { status: 503 });
+                }
+              } else {
+                return Response.json({
+                  error: {
+                    type: "server_error",
+                    code: "chatgpt_browser_unavailable",
+                    message: error instanceof Error ? error.message : String(error),
+                    retryable: true,
+                  },
+                }, { status: 503 });
+              }
             }
           }
           return Response.json(modelCatalog());

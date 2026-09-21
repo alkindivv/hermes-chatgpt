@@ -64,6 +64,34 @@ test("verified model catalog proves browser health when idle", async () => {
   expect(inspected).toEqual(["/test/launcher-browser.json"]);
 });
 
+test("verified model catalog treats an independent active Codex turn as healthy-but-busy", async () => {
+  const cfg = config();
+  cfg.runtime.browserHost = "launcher";
+  cfg.runtime.browserHostDescriptorPath = "/test/launcher-browser.json";
+  let livenessChecks = 0;
+  const host = await startHermesServer(cfg, {
+    adapterFactory: () => adapter([{ type: "done", stopReason: "stop" }]),
+    inspectBrowser: async () => {
+      throw new Error(
+        "Launcher ChatGPT session could not be verified: ChatGPT browser is running Codex turn trace_busy_123",
+      );
+    },
+    inspectBrowserLiveness: async path => {
+      expect(path).toBe("/test/launcher-browser.json");
+      livenessChecks++;
+    },
+  });
+  close.push(host.close);
+  const response = await fetch(
+    `http://127.0.0.1:${host.server.port}/v1/models/verified`,
+    { headers: { authorization: `Bearer ${token}` } },
+  );
+  expect(response.status).toBe(200);
+  expect((await response.json() as any).data.map((m: any) => m.id))
+    .toEqual(["chatgpt-web/light", "chatgpt-web/medium", "chatgpt-web/high"]);
+  expect(livenessChecks).toBe(1);
+});
+
 test("verified model catalog reports browser health failures instead of a false healthy catalog", async () => {
   const cfg = config();
   cfg.runtime.browserHost = "launcher";
