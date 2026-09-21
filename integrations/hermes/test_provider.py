@@ -107,7 +107,7 @@ class ProviderContractTest(unittest.TestCase):
                         model="chatgpt-web/high",
                     ),
                     {
-                        "reason": "rate_limit",
+                        "reason": "upstream_rate_limit",
                         "retryable": True,
                         "should_fallback": True,
                         "should_rotate_credential": False,
@@ -126,7 +126,7 @@ class ProviderContractTest(unittest.TestCase):
                     provider="hermes-chatgpt",
                     model="chatgpt-web/high",
                 )
-                self.assertEqual(classified.reason.value, "rate_limit")
+                self.assertEqual(classified.reason.value, "upstream_rate_limit")
                 self.assertTrue(classified.retryable)
                 self.assertTrue(classified.should_fallback)
                 self.assertFalse(classified.should_rotate_credential)
@@ -304,7 +304,7 @@ class ProviderContractTest(unittest.TestCase):
                 model="chatgpt-web/high",
                 base_url=f"http://127.0.0.1:{port}/v1",
             )
-            self.assertEqual(classified.reason.value, "rate_limit")
+            self.assertEqual(classified.reason.value, "upstream_rate_limit")
             self.assertTrue(classified.retryable)
             self.assertTrue(classified.should_fallback)
             self.assertFalse(classified.should_rotate_credential)

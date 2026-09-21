@@ -39,8 +39,12 @@ def _classify_api_error(
     )
 
     if code == "rate_limit_exceeded" or "chatgpt rate limit" in text:
+        # The local bridge credential is only transport authentication. A 429 comes from
+        # the authenticated ChatGPT account behind that bridge, so exhausting/rotating the
+        # local token is incorrect. Hermes' upstream_rate_limit reason preserves the
+        # credential while retaining retry/backoff/fallback semantics.
         return {
-            "reason": "rate_limit",
+            "reason": "upstream_rate_limit",
             "retryable": True,
             "should_fallback": True,
             "should_rotate_credential": False,
