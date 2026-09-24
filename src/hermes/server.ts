@@ -52,7 +52,14 @@ export async function startHermesServer(config: HermesServerConfig, dependencies
       { expectedProfile: "production" },
     ));
   const active = new Map<AbortController, Promise<void>>();
-  const routes = availableChatGptWebModelRoutes(runtime).filter(r => r.interactionMode === "automatic" && r.backendModel === CHATGPT_WEB_BACKEND_MODEL);
+  // Hermes profiles intentionally use the stable effort aliases (chatgpt-web/high, etc.).
+  // Codex 6.0 owns the new family-specific catalog, while the dedicated Hermes bridge keeps its
+  // existing five-model API contract so deployed profile fallback order and capability caches
+  // remain stable across the runtime update.
+  const routes = availableChatGptWebModelRoutes(runtime, true)
+    .filter(r => r.interactionMode === "automatic"
+      && r.backendModel === CHATGPT_WEB_BACKEND_MODEL
+      && r.legacy === true);
   let closing = false;
   let closePromise: Promise<void> | undefined;
   let server: ReturnType<typeof Bun.serve>;

@@ -475,6 +475,18 @@ export const LAUNCHER_CAPABILITY_INSPECTION_TIMEOUT_MS = 120_000;
 
 export type LauncherTurnActivity =
   | {
+      phase: "usage";
+      traceId: string;
+      helperPid: number;
+      receipt?: {
+        id: string;
+        accountKey: string;
+        model: "gpt-6-pro" | "gpt-5.6-pro" | "pro-unknown" | "other";
+        at: number;
+      };
+      trackingError?: "account-unavailable";
+    }
+  | {
       phase: "start";
       traceId: string;
       helperPid: number;
@@ -499,12 +511,13 @@ export type LauncherTurnActivity =
       connectorBound?: boolean;
     };
 
-export const LAUNCHER_TURN_START_TIMEOUT_MS = 5_000;
+// Startup must outlast the launcher's ten-second idle bootstrap. This is not a model-turn budget.
+export const LAUNCHER_TURN_START_TIMEOUT_MS = 30_000;
 export const LAUNCHER_TURN_HEARTBEAT_INTERVAL_MS = 10_000;
 export const LAUNCHER_TURN_HEARTBEAT_TIMEOUT_MS = 5_000;
 export const LAUNCHER_TURN_END_TIMEOUT_MS = 15_000;
 
-export const REMOTE_LAUNCHER_TURN_START_TIMEOUT_MS = 30_000;
+export const REMOTE_LAUNCHER_TURN_START_TIMEOUT_MS = 45_000;
 export const REMOTE_LAUNCHER_TURN_HEARTBEAT_TIMEOUT_MS = 20_000;
 export const REMOTE_LAUNCHER_TURN_END_TIMEOUT_MS = 30_000;
 
@@ -752,15 +765,18 @@ export async function notifyLauncherTurn(
   descriptorPath: string,
   activity: LauncherTurnActivity,
   timeoutMs?: number,
+  signal?: AbortSignal,
 ): Promise<{
   surfaceId?: string;
   reused?: boolean;
   connectorBound?: boolean;
   cancelledByUser?: boolean;
+  trackUsage?: boolean;
 }> {
   const descriptor = readLauncherBrowserHostDescriptor(descriptorPath);
   const effectiveTimeoutMs = timeoutMs ?? launcherTurnControlTimeoutMs(descriptor.remote === true, activity.phase);
-  const attempts = descriptor.remote === true && activity.phase !== "heartbeat" ? 2 : 1;
+  const idempotentRemoteMutation = activity.phase === "start" || activity.phase === "end";
+  const attempts = descriptor.remote === true && idempotentRemoteMutation ? 2 : 1;
   let lastError: unknown;
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -774,7 +790,7 @@ export async function notifyLauncherTurn(
           "content-type": "application/json",
         },
         body: JSON.stringify(descriptor.remote === true ? { ...activity, remoteOwner: true } : activity),
-        signal: controller.signal,
+        signal: signal ? AbortSignal.any([controller.signal, signal]) : controller.signal,
       });
       if (!response.ok) {
         const body = await response.json().catch(() => ({})) as Record<string, unknown>;
@@ -791,6 +807,7 @@ export async function notifyLauncherTurn(
         const detail = typeof body.error === "string" ? body.error : "";
         throw new Error(`HTTP ${response.status}${detail ? `: ${detail}` : ""}`);
       }
+
       const body = await response.json().catch(() => ({})) as Record<string, unknown>;
       if (activity.phase === "start") {
         if (typeof body.surfaceId !== "string" || !/^[A-Za-z0-9_-]{32}$/.test(body.surfaceId)) {
@@ -806,6 +823,7 @@ export async function notifyLauncherTurn(
           surfaceId: body.surfaceId,
           reused: body.reused,
           connectorBound: body.connectorBound,
+          trackUsage: body.trackUsage === true,
         };
       }
       if (activity.phase === "end") {
@@ -816,9 +834,16 @@ export async function notifyLauncherTurn(
       }
       return {};
     } catch (error) {
+      if (signal?.aborted) {
+        throw new DOMException("Launcher browser acquisition cancelled", "AbortError");
+      }
       if (error instanceof LauncherBrowserTurnCancelledError
-        || error instanceof LauncherRetainedConversationUnavailableError) throw error;
-      lastError = error;
+        || error instanceof LauncherRetainedConversationUnavailableError) {
+        throw error;
+      }
+      lastError = controller.signal.aborted
+        ? new Error(`Launcher browser control ${activity.phase} timed out after ${effectiveTimeoutMs}ms`)
+        : error;
     } finally {
       clearTimeout(timer);
     }
