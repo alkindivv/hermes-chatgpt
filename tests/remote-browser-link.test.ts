@@ -6,6 +6,7 @@ import {
 import {
   buildLocalRemoteDescriptor,
   parseRemoteLauncherDescriptor,
+  remoteBrowserSshNonInteractiveArgs,
 } from "../src/remote-browser-link";
 
 function remoteDescriptorJson(): string {
@@ -31,6 +32,13 @@ function remoteDescriptorJson(): string {
     createdAt: "2026-09-18T00:00:00.000Z",
   });
 }
+
+test("every remote browser SSH phase is non-interactive and bounded", () => {
+  expect(remoteBrowserSshNonInteractiveArgs()).toEqual([
+    "-o", "BatchMode=yes",
+    "-o", "ConnectTimeout=15",
+  ]);
+});
 
 test("remote browser link validates a launcher descriptor without requiring VPS helper paths locally", () => {
   const descriptor = parseRemoteLauncherDescriptor(remoteDescriptorJson());

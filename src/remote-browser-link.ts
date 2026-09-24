@@ -19,6 +19,14 @@ import {
 
 export const DEFAULT_REMOTE_BROWSER_DESCRIPTOR = "~/.codex-chatgpt-web/runtime/launcher-browser.json";
 const CONNECT_TIMEOUT_MS = 15_000;
+const SSH_CONNECT_TIMEOUT_SECONDS = 15;
+
+export function remoteBrowserSshNonInteractiveArgs(): string[] {
+  return [
+    "-o", "BatchMode=yes",
+    "-o", `ConnectTimeout=${SSH_CONNECT_TIMEOUT_SECONDS}`,
+  ];
+}
 
 export interface RemoteBrowserLinkOptions {
   target: string;
@@ -218,10 +226,15 @@ function fetchRemoteDescriptor(
   remoteDescriptorPath: string,
 ): RemoteLauncherDescriptor {
   const command = remoteDescriptorReadCommand(remoteDescriptorPath);
-  const result = spawnSync(sshExecutable, [target, command], {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  const result = spawnSync(
+    sshExecutable,
+    [...remoteBrowserSshNonInteractiveArgs(), target, command],
+    {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: CONNECT_TIMEOUT_MS + 5_000,
+    },
+  );
   if (result.error) throw result.error;
   if (result.status !== 0) {
     const detail = result.stderr.trim();
@@ -237,10 +250,19 @@ function fetchRemoteDescriptorOwner(
   target: string,
   remoteDescriptorPath: string,
 ): string {
-  const result = spawnSync(sshExecutable, [target, remoteDescriptorOwnerCommand(remoteDescriptorPath)], {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  const result = spawnSync(
+    sshExecutable,
+    [
+      ...remoteBrowserSshNonInteractiveArgs(),
+      target,
+      remoteDescriptorOwnerCommand(remoteDescriptorPath),
+    ],
+    {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: CONNECT_TIMEOUT_MS + 5_000,
+    },
+  );
   if (result.error) throw result.error;
   if (result.status !== 0) {
     const detail = result.stderr.trim();
@@ -390,8 +412,7 @@ export async function connectRemoteBrowserLink(options: RemoteBrowserLinkOptions
   const tunnel = spawn(sshExecutable, [
     "-N",
     "-T",
-    "-o", "BatchMode=yes",
-    "-o", "ConnectTimeout=15",
+    ...remoteBrowserSshNonInteractiveArgs(),
     "-o", "ExitOnForwardFailure=yes",
     "-o", "ServerAliveInterval=30",
     "-o", "ServerAliveCountMax=3",
