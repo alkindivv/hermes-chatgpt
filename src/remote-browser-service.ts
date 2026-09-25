@@ -29,8 +29,11 @@ export interface RemoteBrowserServiceStatus {
   installed: boolean;
   loaded: boolean;
   running: boolean;
+  ready: boolean;
   label: string;
   definitionPath?: string;
+  descriptorPath?: string;
+  lastExitCode?: number;
 }
 
 function xml(value: string): string {
@@ -44,6 +47,75 @@ function xml(value: string): string {
 
 function plistPath(): string {
   return join(homedir(), "Library", "LaunchAgents", `${LABEL}.plist`);
+}
+
+function xmlDecode(value: string): string {
+  return value
+    .replaceAll("&quot;", '"')
+    .replaceAll("&apos;", "'")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&amp;", "&");
+}
+
+export function remoteBrowserServiceDescriptorPathFromDefinition(
+  definition: string,
+): string | undefined {
+  const match = definition.match(
+    /<string>--local-descriptor<\/string>\s*<string>([^<]+)<\/string>/,
+  );
+  return match ? xmlDecode(match[1]) : undefined;
+}
+
+function installedDescriptorPath(): string | undefined {
+  const path = plistPath();
+  if (!existsSync(path)) return undefined;
+  try {
+    return remoteBrowserServiceDescriptorPathFromDefinition(readFileSync(path, "utf8"));
+  } catch {
+    return undefined;
+  }
+}
+
+function remoteDescriptorReady(path: string | undefined): boolean {
+  if (!path || !existsSync(path)) return false;
+  try {
+    const descriptor = JSON.parse(readFileSync(path, "utf8")) as {
+      remote?: unknown;
+      pid?: unknown;
+    };
+    return descriptor.remote === true
+      && Number.isInteger(descriptor.pid)
+      && (descriptor.pid as number) > 0
+      && processRunning(descriptor.pid as number);
+  } catch {
+    return false;
+  }
+}
+
+export function remoteBrowserServiceLastExitCode(output: string): number | undefined {
+  const match = output.match(/^\s*last exit code = (-?\d+)\s*$/m);
+  if (!match) return undefined;
+  const value = Number(match[1]);
+  return Number.isInteger(value) ? value : undefined;
+}
+
+function remoteBrowserStderrPath(): string {
+  return join(getConfigDir(), "logs", "remote-browser.stderr.log");
+}
+
+function lastRemoteBrowserError(): string | undefined {
+  const path = remoteBrowserStderrPath();
+  if (!existsSync(path)) return undefined;
+  try {
+    const lines = readFileSync(path, "utf8")
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(Boolean);
+    return lines.at(-1)?.slice(0, 2_000);
+  } catch {
+    return undefined;
+  }
 }
 
 function launchDomain(): string {
@@ -137,17 +209,33 @@ ${args.map(arg => `    <string>${xml(arg)}</string>`).join("\n")}
 
 export function getRemoteBrowserServiceStatus(): RemoteBrowserServiceStatus {
   if (process.platform !== "darwin") {
-    return { supported: false, installed: false, loaded: false, running: false, label: LABEL };
+    return {
+      supported: false,
+      installed: false,
+      loaded: false,
+      running: false,
+      ready: false,
+      label: LABEL,
+    };
   }
   const path = plistPath();
+  const descriptorPath = installedDescriptorPath();
   const result = runCommand("launchctl", ["print", serviceTarget()]);
   return {
     supported: true,
     installed: existsSync(path),
     loaded: result.status === 0,
     running: result.status === 0 && /^\s*state = running\s*$/m.test(result.stdout),
+    ready: remoteDescriptorReady(descriptorPath),
     label: LABEL,
     definitionPath: path,
+    ...(descriptorPath ? { descriptorPath } : {}),
+    ...(result.status === 0
+      ? (() => {
+        const lastExitCode = remoteBrowserServiceLastExitCode(result.stdout);
+        return lastExitCode === undefined ? {} : { lastExitCode };
+      })()
+      : {}),
   };
 }
 
@@ -159,6 +247,22 @@ async function waitForUnloaded(timeoutMs = 20_000): Promise<void> {
   if (getRemoteBrowserServiceStatus().loaded) {
     throw new Error(`launchd did not unload ${LABEL} after ${timeoutMs}ms`);
   }
+}
+
+async function waitForReady(timeoutMs = 60_000): Promise<RemoteBrowserServiceStatus> {
+  const deadline = Date.now() + timeoutMs;
+  let status = getRemoteBrowserServiceStatus();
+  while (Date.now() < deadline) {
+    if (status.ready) return status;
+    await new Promise(resolveWait => setTimeout(resolveWait, 100));
+    status = getRemoteBrowserServiceStatus();
+  }
+  const detail = lastRemoteBrowserError();
+  const exit = status.lastExitCode === undefined ? "" : ` lastExitCode=${status.lastExitCode}.`;
+  throw new Error(
+    `Remote browser LaunchAgent did not become ready within ${timeoutMs}ms.${exit}`
+    + `${detail ? ` Last error: ${detail}` : " Check remote-browser.stderr.log for details."}`,
+  );
 }
 
 function activeForegroundLinkPid(path: string): number | undefined {
@@ -174,9 +278,9 @@ function activeForegroundLinkPid(path: string): number | undefined {
   }
 }
 
-export function installRemoteBrowserService(
+export async function installRemoteBrowserService(
   options: RemoteBrowserServiceOptions,
-): RemoteBrowserServiceStatus {
+): Promise<RemoteBrowserServiceStatus> {
   assertMacOs();
   const current = getRemoteBrowserServiceStatus();
   const activePid = activeForegroundLinkPid(remoteBrowserLocalDescriptorPath(options.localDescriptorPath));
@@ -197,10 +301,10 @@ export function installRemoteBrowserService(
     atomicWriteFile(plistPath(), next);
   }
   if (!current.loaded) runChecked("launchctl", ["bootstrap", launchDomain(), plistPath()]);
-  return getRemoteBrowserServiceStatus();
+  return await waitForReady();
 }
 
-export function startRemoteBrowserService(): RemoteBrowserServiceStatus {
+export async function startRemoteBrowserService(): Promise<RemoteBrowserServiceStatus> {
   assertMacOs();
   if (!existsSync(plistPath())) {
     throw new Error("Remote browser LaunchAgent is not installed");
@@ -211,7 +315,7 @@ export function startRemoteBrowserService(): RemoteBrowserServiceStatus {
   } else if (!status.running) {
     runChecked("launchctl", ["kickstart", "-k", serviceTarget()]);
   }
-  return getRemoteBrowserServiceStatus();
+  return await waitForReady();
 }
 
 export async function stopRemoteBrowserService(): Promise<RemoteBrowserServiceStatus> {
@@ -225,7 +329,7 @@ export async function stopRemoteBrowserService(): Promise<RemoteBrowserServiceSt
 
 export async function restartRemoteBrowserService(): Promise<RemoteBrowserServiceStatus> {
   await stopRemoteBrowserService();
-  return startRemoteBrowserService();
+  return await startRemoteBrowserService();
 }
 
 export async function uninstallRemoteBrowserService(): Promise<RemoteBrowserServiceStatus> {

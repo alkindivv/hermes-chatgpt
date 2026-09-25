@@ -438,7 +438,7 @@ async function remoteBrowserCommand(args: string[]): Promise<void> {
     const localDescriptorPath = takeOption(args, "--local-descriptor");
     const browserHelperScriptPath = takeOption(args, "--browser-helper-script");
     assertNoArgs(args);
-    const status = installRemoteBrowserService({
+    const status = await installRemoteBrowserService({
       target,
       ...(remoteDescriptorPath ? { remoteDescriptorPath } : {}),
       ...(localDescriptorPath ? { localDescriptorPath } : {}),
@@ -450,7 +450,7 @@ async function remoteBrowserCommand(args: string[]): Promise<void> {
 
   assertNoArgs(args);
   const status = serviceAction === "status" ? getRemoteBrowserServiceStatus()
-    : serviceAction === "start" ? startRemoteBrowserService()
+    : serviceAction === "start" ? await startRemoteBrowserService()
       : serviceAction === "restart" ? await restartRemoteBrowserService()
         : serviceAction === "stop" ? await stopRemoteBrowserService()
           : serviceAction === "uninstall" ? await uninstallRemoteBrowserService()

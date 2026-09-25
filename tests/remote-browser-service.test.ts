@@ -1,5 +1,9 @@
 import { afterEach, expect, test } from "bun:test";
-import { remoteBrowserServiceDefinition } from "../src/remote-browser-service";
+import {
+  remoteBrowserServiceDefinition,
+  remoteBrowserServiceDescriptorPathFromDefinition,
+  remoteBrowserServiceLastExitCode,
+} from "../src/remote-browser-service";
 
 const previousHome = process.env.CODEX_CHATGPT_WEB_HOME;
 
@@ -35,6 +39,23 @@ test("remote browser LaunchAgent persists the durable foreground connect command
   expect(definition).not.toContain("launcher-control-token");
   expect(definition).not.toContain("OPENAI_API_TUNNEL");
   expect(definition).not.toContain("sk-");
+});
+
+test("remote browser LaunchAgent status can recover its descriptor path from the plist", () => {
+  process.env.CODEX_CHATGPT_WEB_HOME = "/Users/test/.codex-chatgpt-web";
+  const definition = remoteBrowserServiceDefinition({
+    target: "ubuntu@example.test",
+    remoteDescriptorPath: "~/remote/browser.json",
+    localDescriptorPath: "/Users/test/Library/Application Support/remote&browser.json",
+    runtimeCommand: [process.execPath, "/opt/codex-chatgpt-web/app/cli.js"],
+  });
+  expect(remoteBrowserServiceDescriptorPathFromDefinition(definition))
+    .toBe("/Users/test/Library/Application Support/remote&browser.json");
+});
+
+test("remote browser LaunchAgent status parses a previous launchd exit code", () => {
+  expect(remoteBrowserServiceLastExitCode("state = running\nlast exit code = 255\n")).toBe(255);
+  expect(remoteBrowserServiceLastExitCode("state = running\n")).toBeUndefined();
 });
 
 test("remote browser LaunchAgent keeps helper override optional and XML-safe", () => {
