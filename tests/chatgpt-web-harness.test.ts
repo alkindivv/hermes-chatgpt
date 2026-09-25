@@ -274,6 +274,28 @@ function toolResult(value: Record<string, unknown>): BrokerToolResult {
   };
 }
 
+function toolTextJson(value: unknown): Record<string, unknown> {
+  const content = value && typeof value === "object" && !Array.isArray(value)
+    && Array.isArray((value as { content?: unknown }).content)
+    ? (value as { content: unknown[] }).content
+    : undefined;
+  const text = content
+    ?.find((item): item is { type: "text"; text: string } => Boolean(
+      item
+      && typeof item === "object"
+      && !Array.isArray(item)
+      && (item as { type?: unknown }).type === "text"
+      && typeof (item as { text?: unknown }).text === "string",
+    ))
+    ?.text;
+  if (!text) throw new Error("Expected a text MCP tool result");
+  const parsed = JSON.parse(text) as unknown;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Expected MCP tool text to contain a JSON object");
+  }
+  return parsed as Record<string, unknown>;
+}
+
 function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
   if (value && typeof value === "object") {
@@ -2786,8 +2808,8 @@ describe("ChatGPT outer-native harness v4", () => {
           .rejects.toThrow("Expected exactly one native command tool");
         expect(rejectedCalls).toEqual([]);
       }
-      expect((await firstExec).structuredContent).toEqual({ output: tempRoot, exit_code: 0 });
-      expect((await secondExec).structuredContent).toEqual({ output: "clean", exit_code: 0 });
+      expect(toolTextJson(await firstExec)).toEqual({ output: tempRoot, exit_code: 0 });
+      expect(toolTextJson(await secondExec)).toEqual({ output: "clean", exit_code: 0 });
 
       const inventoryThroughGateway = async (
         query: string,
@@ -2815,7 +2837,7 @@ describe("ChatGPT outer-native harness v4", () => {
         false,
         ["exec", "web__run", "multi_agent_v1__wait_agent"],
       );
-      expect(emptyGatewayInventory.structuredContent).toEqual({
+      expect(toolTextJson(emptyGatewayInventory)).toEqual({
         tools: [],
         total: 0,
         next_offset: null,
@@ -2838,7 +2860,8 @@ describe("ChatGPT outer-native harness v4", () => {
         false,
         ["exec", "web__run", "mcp__codex_apps__codex_native2_codex_exec"],
       );
-      expect(rawGatewayInventory.structuredContent).toMatchObject({
+      const rawGatewayInventoryJson = toolTextJson(rawGatewayInventory);
+      expect(rawGatewayInventoryJson).toMatchObject({
         tools: [{
           wire_name: "exec",
           name: "exec",
@@ -2848,7 +2871,7 @@ describe("ChatGPT outer-native harness v4", () => {
         total: 1,
         next_offset: null,
       });
-      expect(rawGatewayInventory.structuredContent).not.toHaveProperty("discovery_tools");
+      expect(rawGatewayInventoryJson).not.toHaveProperty("discovery_tools");
 
       const rawWeb = call("codex_tool_call", {
         turn_token: token,
@@ -2914,7 +2937,7 @@ describe("ChatGPT outer-native harness v4", () => {
         false,
         ["exec", "vendor__exec", "vendor__codex_tool_call"],
       );
-      expect(vendorInventory.structuredContent).toMatchObject({
+      expect(toolTextJson(vendorInventory)).toMatchObject({
         total: 2,
         tools: [
           { wire_name: "vendor__exec", kind: "gateway" },
@@ -2923,7 +2946,7 @@ describe("ChatGPT outer-native harness v4", () => {
       });
 
       const nestedInventory = await inventoryThroughGateway("web__run", true, ["exec", "web__run"]);
-      expect(nestedInventory.structuredContent).toMatchObject({
+      expect(toolTextJson(nestedInventory)).toMatchObject({
         total: 1,
         next_offset: null,
         tools: [{
@@ -2972,11 +2995,11 @@ describe("ChatGPT outer-native harness v4", () => {
       });
       expect(waitRequest?.input).toBeUndefined();
       broker.completeTool(token, waitRequest!.callId, toolResult({ output: "completed" }));
-      expect((await waitPromise).structuredContent).toEqual({ output: "completed" });
+      expect(toolTextJson(await waitPromise)).toEqual({ output: "completed" });
 
       for (const wait of agentWaits) {
         const inventory = await inventoryThroughGateway(wait.name, true, [wait.name]);
-        const catalog = inventory.structuredContent as { tools: Array<{ description: string; parameters: { properties: Record<string, unknown>; required: string[] } }> };
+        const catalog = toolTextJson(inventory) as unknown as { tools: Array<{ description: string; parameters: { properties: Record<string, unknown>; required: string[] } }> };
         expect(catalog.tools).toHaveLength(1);
         expect(catalog.tools[0]!.description).toContain("exactly 30 seconds");
         expect(catalog.tools[0]!.description).not.toContain("target ids");
@@ -3004,7 +3027,7 @@ describe("ChatGPT outer-native harness v4", () => {
           expect(calls).toEqual([{ name: wait.name, input: wait.args }]);
         }
         broker.completeTool(token, request!.callId, toolResult(wait.result));
-        expect((await pending).structuredContent).toEqual(wait.result);
+        expect(toolTextJson(await pending)).toEqual(wait.result);
 
         for (const timeout_ms of [180_000, 30_000]) {
           const args = { ...wait.args, timeout_ms };
@@ -3117,7 +3140,7 @@ describe("ChatGPT outer-native harness v4", () => {
         query: "exec_command",
         include_schema: false,
       });
-      expect(inventory.structuredContent).toMatchObject({
+      expect(toolTextJson(inventory)).toMatchObject({
         total: 1,
         tools: [{ wire_name: "exec_command", kind: "function" }],
       });
@@ -3148,7 +3171,7 @@ describe("ChatGPT outer-native harness v4", () => {
       }));
       expect(execRequest?.input).toBeUndefined();
       broker.completeTool(token, execRequest!.callId, toolResult({ output: tempRoot, exit_code: 0, session_id: 42 }));
-      expect((await exec).structuredContent).toMatchObject({ session_id: 42 });
+      expect(toolTextJson(await exec)).toMatchObject({ session_id: 42 });
 
       const write = call("codex_write_stdin", {
         turn_token: token,
@@ -3169,7 +3192,7 @@ describe("ChatGPT outer-native harness v4", () => {
         },
       }));
       broker.completeTool(token, writeRequest!.callId, toolResult({ output: "continued" }));
-      expect((await write).structuredContent).toEqual({ output: "continued" });
+      expect(toolTextJson(await write)).toEqual({ output: "continued" });
 
       const patch = "*** Begin Patch\n*** Add File: direct-token.txt\n+ok\n*** End Patch";
       const apply = call("codex_apply_patch", { turn_token: token, patch });
@@ -3177,7 +3200,7 @@ describe("ChatGPT outer-native harness v4", () => {
       expect(applyRequest).toMatchObject({ wireName: "apply_patch", freeform: true, input: patch });
       expect(applyRequest?.arguments).toBeUndefined();
       broker.completeTool(token, applyRequest!.callId, toolResult({ output: "Done!" }));
-      expect((await apply).structuredContent).toEqual({ output: "Done!" });
+      expect(toolTextJson(await apply)).toEqual({ output: "Done!" });
 
       const view = call("codex_view_image", {
         turn_token: token,
@@ -3191,7 +3214,7 @@ describe("ChatGPT outer-native harness v4", () => {
         arguments: { path: "/private/tmp/direct-token.png", detail: "original" },
       }));
       broker.completeTool(token, viewRequest!.callId, toolResult({ output: "image-ready" }));
-      expect((await view).structuredContent).toEqual({ output: "image-ready" });
+      expect(toolTextJson(await view)).toEqual({ output: "image-ready" });
     } finally {
       await client.close().catch(() => {});
       broker.revoke(token);
@@ -3256,8 +3279,8 @@ describe("ChatGPT outer-native harness v4", () => {
 
       broker.completeTool(firstToken, firstRequest!.callId, toolResult({ output: "first" }));
       broker.completeTool(secondToken, secondRequest!.callId, toolResult({ output: "second" }));
-      expect((await firstCall).structuredContent).toEqual({ output: "first" });
-      expect((await secondCall).structuredContent).toEqual({ output: "second" });
+      expect(toolTextJson(await firstCall)).toEqual({ output: "first" });
+      expect(toolTextJson(await secondCall)).toEqual({ output: "second" });
     } finally {
       await client.close().catch(() => {});
       broker.revoke(firstToken);
@@ -3307,7 +3330,7 @@ describe("ChatGPT outer-native harness v4", () => {
       expect(execRequest?.input).toContain('"shell_command"');
       expect(execRequest?.input).toContain(JSON.stringify({ cmd: "pwd", workdir: tempRoot }));
       broker.completeTool(token, execRequest!.callId, toolResult({ output: tempRoot, exit_code: 0 }));
-      expect((await execPromise).structuredContent).toEqual({ output: tempRoot, exit_code: 0 });
+      expect(toolTextJson(await execPromise)).toEqual({ output: tempRoot, exit_code: 0 });
     } finally {
       await client.close().catch(() => {});
       broker.revoke(token);
@@ -3363,7 +3386,7 @@ describe("ChatGPT outer-native harness v4", () => {
         name: "codex_tool_inventory",
         arguments: { turn_token: replacementToken, query: "exec_command", include_schema: false },
       });
-      expect(inventory.structuredContent).toMatchObject({
+      expect(toolTextJson(inventory)).toMatchObject({
         total: 1,
         tools: [{ wire_name: "exec_command" }],
       });
@@ -3420,7 +3443,7 @@ describe("ChatGPT outer-native harness v4", () => {
 
       const timeoutResult = await timedOut;
       expect(timeoutResult.isError).toBe(true);
-      expect(timeoutResult.structuredContent).toMatchObject({
+      expect(toolTextJson(timeoutResult)).toMatchObject({
         code: "codex_tool_timeout",
         tool: "exec_command",
         retryable: false,
@@ -3444,7 +3467,7 @@ describe("ChatGPT outer-native harness v4", () => {
         name: "codex_tool_inventory",
         arguments: { turn_token: activeReplacementToken, query: "exec_command", include_schema: false },
       });
-      expect(inventory.structuredContent).toMatchObject({
+      expect(toolTextJson(inventory)).toMatchObject({
         total: 1,
         tools: [{ wire_name: "exec_command" }],
       });

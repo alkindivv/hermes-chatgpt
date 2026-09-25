@@ -42,6 +42,28 @@ function toolResult(value: Record<string, unknown>): BrokerToolResult {
   };
 }
 
+function toolTextJson(value: unknown): Record<string, unknown> {
+  const content = value && typeof value === "object" && !Array.isArray(value)
+    && Array.isArray((value as { content?: unknown }).content)
+    ? (value as { content: unknown[] }).content
+    : undefined;
+  const text = content
+    ?.find((item): item is { type: "text"; text: string } => Boolean(
+      item
+      && typeof item === "object"
+      && !Array.isArray(item)
+      && (item as { type?: unknown }).type === "text"
+      && typeof (item as { text?: unknown }).text === "string",
+    ))
+    ?.text;
+  if (!text) throw new Error("Expected a text MCP tool result");
+  const parsed = JSON.parse(text) as unknown;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Expected MCP tool text to contain a JSON object");
+  }
+  return parsed as Record<string, unknown>;
+}
+
 describe("Zero Risk turn broker lifecycle", () => {
   test("requires both Launcher Sent and connector start before tools can run", async () => {
     const socketPath = endpoint("strict-lifecycle");
@@ -344,7 +366,7 @@ describe("Zero Risk public MCP ABI", () => {
         content: [{ type: "text", text: JSON.stringify({ tools: [], total: 0 }) }],
       });
       const inventory = await inventoryAfterStart;
-      expect(inventory.structuredContent).toMatchObject({
+      expect(toolTextJson(inventory)).toMatchObject({
         total: 2,
         tools: [
           { wire_name: "exec_command" },
@@ -392,7 +414,7 @@ describe("Zero Risk public MCP ABI", () => {
         arguments: { query: "test" },
       });
       broker.completeTool(requestId, request!.callId, toolResult({ ok: true }));
-      expect((await useful).structuredContent).toEqual({ ok: true });
+      expect(toolTextJson(await useful)).toEqual({ ok: true });
 
       const complete = await client.callTool({
         name: "codex_turn_complete",

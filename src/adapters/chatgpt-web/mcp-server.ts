@@ -105,6 +105,13 @@ function result(value: Record<string, unknown>, isError = false) {
   };
 }
 
+function contentOnlyResult(value: Record<string, unknown>, isError = false) {
+  return {
+    content: [{ type: "text" as const, text: JSON.stringify(value) }],
+    ...(isError ? { isError: true } : {}),
+  };
+}
+
 function afterSafeStart(contract: ChatGptMcpContract, description: string): string {
   return contract === "safe"
     ? `For a Zero Risk request connected by codex_turn_start. ${description}`
@@ -216,11 +223,18 @@ export function chatGptMcpInvocationTimeout(
 }
 
 function asMcpResult(value: BrokerToolResult) {
+  const structured = value.structuredContent !== undefined
+    && value.structuredContent !== null
+    && typeof value.structuredContent === "object"
+    ? value.structuredContent
+    : undefined;
+  const content = value.content.length > 0
+    ? value.content
+    : structured !== undefined
+      ? [{ type: "text", text: JSON.stringify(structured) }]
+      : [];
   return {
-    content: value.content as never,
-    ...(value.structuredContent !== undefined && value.structuredContent !== null && typeof value.structuredContent === "object"
-      ? { structuredContent: value.structuredContent as Record<string, unknown> }
-      : {}),
+    content: content as never,
     ...(value.isError ? { isError: true } : {}),
     ...(value._meta !== undefined && value._meta !== null && typeof value._meta === "object"
       ? { _meta: value._meta as Record<string, unknown> }
@@ -580,7 +594,7 @@ export async function runChatGptMcpServer(options: {
         console.error(
           `[chatgpt-web-mcp] ${toolName} did not complete within ${timeoutMs}ms; retired its turn binding`,
         );
-        return result({
+        return contentOnlyResult({
           code: "codex_tool_timeout",
           tool: toolName,
           timeout_ms: timeoutMs,
@@ -854,7 +868,7 @@ export async function runChatGptMcpServer(options: {
             ...(include_schema ? { parameters: browserToolParameters(tool) } : {}),
           }))
           : [];
-        return result({
+        return contentOnlyResult({
           tools: page,
           total,
           next_offset: offset + page.length < total ? offset + page.length : null,
@@ -898,7 +912,7 @@ export async function runChatGptMcpServer(options: {
           handoffId,
           summary,
         }, 5_000, extra.signal);
-        return result({ submitted: true });
+        return contentOnlyResult({ submitted: true });
       }
       return withClaimedTurn("codex_tool_call", requestId, extra, async claimed => {
         const bound = claimed.environment;
