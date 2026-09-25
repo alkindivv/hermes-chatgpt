@@ -6,7 +6,7 @@ import { inspectCodexIntegration } from "./codex-integration";
 import { browserLoginStateExists, loginVerificationMarkerPath } from "./browser-login";
 import { getServiceStatus } from "./service";
 import { tunnelStatus } from "./tunnel";
-import { getTunnelServiceStatus } from "./tunnel-service";
+import { getTunnelServiceStatus, tunnelServiceDefinitionMatches } from "./tunnel-service";
 import {
   inspectLauncherBrowserHost,
   inspectLauncherBrowserHostLiveness,
@@ -191,6 +191,31 @@ export async function runDoctor(): Promise<DoctorReport> {
     } else {
       checks.push({ id: "tunnel-key", status: "ok", message: "Tunnel runtime key is stored privately" });
     }
+    if (process.platform !== "win32") {
+      try {
+        const broker = statSync(config.brokerSocketPath);
+        checks.push(broker.isSocket()
+          ? {
+              id: "broker",
+              status: "ok",
+              message: `Turn broker socket is ready (${config.brokerSocketPath})`,
+            }
+          : {
+              id: "broker",
+              status: "error",
+              message: "Turn broker endpoint exists but is not a Unix socket",
+              detail: config.brokerSocketPath,
+            });
+      } catch (error) {
+        checks.push({
+          id: "broker",
+          status: "error",
+          message: "Turn broker socket is missing or inaccessible",
+          detail: `${config.brokerSocketPath}: ${error instanceof Error ? error.message : String(error)}`,
+        });
+      }
+    }
+
     const tunnelService = getTunnelServiceStatus();
     if (launcherOwnsRuntime) {
       checks.push(tunnelService.installed || tunnelService.loaded
@@ -202,9 +227,22 @@ export async function runDoctor(): Promise<DoctorReport> {
           }
         : { id: "tunnel-service", status: "ok", message: "Launcher owns the tunnel runtime" });
     } else {
-      checks.push(tunnelService.installed && tunnelService.loaded && tunnelService.running
-        ? { id: "tunnel-service", status: "ok", message: "macOS tunnel service is installed, loaded, and running" }
-        : { id: "tunnel-service", status: "error", message: "macOS tunnel service is not fully running", detail: JSON.stringify(tunnelService) });
+      const serviceReady = tunnelService.installed && tunnelService.loaded && tunnelService.running;
+      const definitionMatches = serviceReady && tunnelServiceDefinitionMatches(config);
+      checks.push(serviceReady && definitionMatches
+        ? {
+            id: "tunnel-service",
+            status: "ok",
+            message: "macOS tunnel service is installed, loaded, running, and matches current config",
+          }
+        : {
+            id: "tunnel-service",
+            status: "error",
+            message: serviceReady
+              ? "macOS tunnel service is running with a stale definition; rerun full setup"
+              : "macOS tunnel service is not fully running",
+            detail: JSON.stringify({ ...tunnelService, definitionMatches }),
+          });
     }
     const runtime = tunnelStatus(config);
     checks.push(runtime.ok
