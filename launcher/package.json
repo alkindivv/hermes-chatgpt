@@ -1,6 +1,6 @@
 {
   "name": "codex-web-gpt-launcher",
-  "version": "6.1.0",
+  "version": "6.1.2",
   "private": true,
   "description": "Desktop control center for Codex ChatGPT Web",
   "author": "miuuyy",
@@ -55,6 +55,7 @@
       "dist/**",
       "electron/**",
       "assets/icon.png",
+      "assets/trayTemplate*.png",
       "assets/linux-appimage-runner.sh",
       "package.json"
     ],

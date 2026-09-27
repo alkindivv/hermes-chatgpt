@@ -20,3 +20,4 @@ notes.md
 .venv-hermes-test/
 __pycache__/
 *.pyc
+/.agents/skills/github-pairing/

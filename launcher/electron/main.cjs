@@ -218,8 +218,8 @@ function trayImage() {
   if (process.platform !== "darwin") {
     return nativeImage.createFromPath(APP_ICON_PATH).resize({ width: 18, height: 18 });
   }
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18"><path d="M4.1 3.4h6.4l3.4 3.4v7.8H7.5l-3.4-3.4V3.4Z" fill="none" stroke="white" stroke-width="1.5" stroke-linejoin="round"/><path d="m7 7 2-2 2 2M7 11l2 2 2-2" fill="none" stroke="white" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-  const image = nativeImage.createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`);
+  const image = nativeImage.createFromPath(path.join(__dirname, "..", "assets", "trayTemplate.png"));
+  if (image.isEmpty()) throw new Error("The macOS menu-bar icon is missing or invalid");
   image.setTemplateImage(true);
   return image;
 }
@@ -536,7 +536,7 @@ function registerIpc({ logger, stateStore }) {
     connectorName: runtimeHost.browserConnectorName(),
     connectorNames: {
       automatic: runtimeHost.setupConnectorName(),
-      manual: "Codex Zero Risk",
+      manual: runtimeHost.setupConnectorName("manual"),
     },
     mcpCredentialsConfigured: runtimeHost?.mcpCredentialsConfigured() ?? false,
     logs: logger.recent(),
@@ -850,6 +850,20 @@ function registerIpc({ logger, stateStore }) {
     if (interactionModeChange) send("launcher:browser-state", browserHost.snapshot());
     if (!IS_DEV_PROFILE) startCatalogVerificationMonitor({ logger, stateStore });
     return { ok: true, stdout: result.stdout };
+  });
+  handle("launcher:connector-name", async (_event, suffix) => {
+    if (browserHost.activeTraceId || browserHost.currentOperation()) {
+      throw new Error("Finish active ChatGPT turns before changing the plugin name");
+    }
+    const result = await runtimeHost.setConnectorNameSuffix(suffix);
+    if (!result.changed) return stateStore.read();
+    const state = stateStore.update({ mcpSetupComplete: false, mcpGuideStep: 2 });
+    send("launcher:connector-names-changed", {
+      connectorName: runtimeHost.browserConnectorName(),
+      connectorNames: { automatic: runtimeHost.setupConnectorName(), manual: runtimeHost.setupConnectorName("manual") },
+    });
+    send("launcher:state-changed", state);
+    return state;
   });
   handle("launcher:set-mcp-step", (_event, step) => {
     if (!Number.isInteger(step) || step < 0 || step > 2) throw new Error("Invalid MCP guide step");

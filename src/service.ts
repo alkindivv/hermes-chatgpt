@@ -56,6 +56,44 @@ async function waitForServiceUnloaded(timeoutMs = 20_000): Promise<void> {
   if (getServiceStatus().loaded) throw new Error(`launchd did not unload ${LABEL} after ${timeoutMs}ms`);
 }
 
+export function serviceHealthIsReady(
+  health: Record<string, unknown>,
+  config: Pick<AppConfig, "mode" | "releaseVersion">,
+): boolean {
+  return health.service === "codex-chatgpt-web"
+    && health.status === "ok"
+    && health.mode === config.mode
+    && health.version === config.releaseVersion
+    && health.accepting_turns === true;
+}
+
+async function waitForServiceReady(config: AppConfig, timeoutMs = 20_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let lastError = "daemon health endpoint is not reachable";
+  while (Date.now() < deadline) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2_000);
+    try {
+      const response = await fetch(`http://${config.host}:${config.port}/healthz`, {
+        signal: controller.signal,
+      });
+      if (response.ok) {
+        const health = await response.json() as Record<string, unknown>;
+        if (serviceHealthIsReady(health, config)) return;
+        lastError = `unexpected health payload: ${JSON.stringify(health)}`;
+      } else {
+        lastError = `HTTP ${response.status}`;
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    } finally {
+      clearTimeout(timeout);
+    }
+    await new Promise(resolveWait => setTimeout(resolveWait, 100));
+  }
+  throw new Error(`daemon did not become ready after restart: ${lastError}`);
+}
+
 function plist(config: AppConfig): string {
   const logDir = join(getConfigDir(), "logs");
   const args = [...config.runtimeCommand, "serve"];
@@ -272,6 +310,7 @@ export async function restartService(config: AppConfig): Promise<ServiceStatus> 
     runChecked("launchctl", ["bootout", serviceTarget()]);
     await waitForServiceUnloaded();
     await bootstrapService(plistPath());
+    await waitForServiceReady(config);
   } catch (error) {
     return releaseDrainAfterFailure(lease, error);
   }

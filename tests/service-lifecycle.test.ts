@@ -1,7 +1,25 @@
 import { describe, expect, test } from "bun:test";
-import { negotiateDrain } from "../src/service";
+import { negotiateDrain, serviceHealthIsReady } from "../src/service";
 
 describe("service drain lifecycle", () => {
+  test("health readiness requires the current daemon contract", () => {
+    const config = { mode: "full" as const, releaseVersion: "6.1.2" };
+    expect(serviceHealthIsReady({
+      service: "codex-chatgpt-web",
+      status: "ok",
+      mode: "full",
+      version: "6.1.2",
+      accepting_turns: true,
+    }, config)).toBe(true);
+    expect(serviceHealthIsReady({
+      service: "codex-chatgpt-web",
+      status: "ok",
+      mode: "full",
+      version: "6.1.2",
+      accepting_turns: false,
+    }, config)).toBe(false);
+  });
+
   test("compensates when a drain may have reached the daemon before the client times out", async () => {
     const actions: string[] = [];
     let acceptingTurns = true;
