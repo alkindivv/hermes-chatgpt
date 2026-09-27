@@ -20,6 +20,7 @@ import {
 export const DEFAULT_REMOTE_BROWSER_DESCRIPTOR = "~/.codex-chatgpt-web/runtime/launcher-browser.json";
 const CONNECT_TIMEOUT_MS = 15_000;
 const SSH_CONNECT_TIMEOUT_SECONDS = 15;
+const REMOTE_DESCRIPTOR_POLL_MS = 10_000;
 
 export function remoteBrowserSshNonInteractiveArgs(): string[] {
   return [
@@ -245,6 +246,46 @@ function fetchRemoteDescriptor(
   return parseRemoteLauncherDescriptor(result.stdout);
 }
 
+export function remoteBrowserDescriptorIdentity(
+  descriptor: Pick<RemoteLauncherDescriptor, "pid" | "endpoint" | "control" | "helper" | "createdAt">,
+): string {
+  return JSON.stringify({
+    pid: descriptor.pid,
+    endpoint: descriptor.endpoint,
+    controlEndpoint: descriptor.control.endpoint,
+    controlToken: descriptor.control.token,
+    helperExecutable: descriptor.helper.executable,
+    helperScript: descriptor.helper.script,
+    createdAt: descriptor.createdAt,
+  });
+}
+
+async function waitForRemoteDescriptorChange(
+  sshExecutable: string,
+  target: string,
+  remoteDescriptorPath: string,
+  original: RemoteLauncherDescriptor,
+  signal: AbortSignal,
+  pollMs = REMOTE_DESCRIPTOR_POLL_MS,
+): Promise<void> {
+  const identity = remoteBrowserDescriptorIdentity(original);
+  let consecutiveFailures = 0;
+  while (!signal.aborted) {
+    await Bun.sleep(pollMs);
+    if (signal.aborted) return;
+    try {
+      const current = fetchRemoteDescriptor(sshExecutable, target, remoteDescriptorPath);
+      consecutiveFailures = 0;
+      if (remoteBrowserDescriptorIdentity(current) !== identity) return;
+    } catch {
+      // A transient SSH/read failure should not flap a healthy tunnel. Three consecutive
+      // failures are enough to let launchd rebuild the whole link from fresh remote state.
+      consecutiveFailures += 1;
+      if (consecutiveFailures >= 3) return;
+    }
+  }
+}
+
 function fetchRemoteDescriptorOwner(
   sshExecutable: string,
   target: string,
@@ -460,10 +501,23 @@ export async function connectRemoteBrowserLink(options: RemoteBrowserLinkOptions
       + "Keep this process running while Codex uses the remote browser.\n",
     );
 
-    const result = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolveExit, rejectExit) => {
+    const monitorAbort = new AbortController();
+    const tunnelExit = new Promise<{ kind: "exit"; code: number | null; signal: NodeJS.Signals | null }>((resolveExit, rejectExit) => {
       tunnel.once("error", rejectExit);
-      tunnel.once("exit", (code, signal) => resolveExit({ code, signal }));
+      tunnel.once("exit", (code, signal) => resolveExit({ kind: "exit", code, signal }));
     });
+    const descriptorChanged = waitForRemoteDescriptorChange(
+      sshExecutable,
+      target,
+      remotePath,
+      remote,
+      monitorAbort.signal,
+    ).then(() => ({ kind: "descriptor-changed" as const }));
+    const result = await Promise.race([tunnelExit, descriptorChanged]);
+    monitorAbort.abort();
+    if (result.kind === "descriptor-changed") {
+      throw new Error("Remote launcher descriptor changed; rebuilding the SSH browser link");
+    }
     if (result.code !== 0 && result.signal !== "SIGTERM" && result.signal !== "SIGINT") {
       throw new Error(`SSH tunnel exited unexpectedly (${result.signal || (result.code ?? 1)})`);
     }

@@ -6,6 +6,7 @@ import {
 import {
   buildLocalRemoteDescriptor,
   parseRemoteLauncherDescriptor,
+  remoteBrowserDescriptorIdentity,
   remoteBrowserSshNonInteractiveArgs,
 } from "../src/remote-browser-link";
 
@@ -38,6 +39,26 @@ test("every remote browser SSH phase is non-interactive and bounded", () => {
     "-o", "BatchMode=yes",
     "-o", "ConnectTimeout=15",
   ]);
+});
+
+test("remote browser link identity changes when the remote launcher is replaced", () => {
+  const descriptor = parseRemoteLauncherDescriptor(remoteDescriptorJson());
+  const replaced = {
+    ...descriptor,
+    pid: descriptor.pid + 1,
+    endpoint: "http://127.0.0.1:40123",
+    control: {
+      endpoint: "http://127.0.0.1:40124",
+      token: "launcher-control-token-replacement-0123456789abcdefghijklmnop",
+    },
+    helper: {
+      executable: "/tmp/.mount_replacement/codex-web-gpt-launcher",
+      script: "/tmp/.mount_replacement/resources/runtime/app/browser-helper.cjs",
+    },
+    createdAt: "2026-09-27T11:27:40.108Z",
+  };
+  expect(remoteBrowserDescriptorIdentity(replaced))
+    .not.toBe(remoteBrowserDescriptorIdentity(descriptor));
 });
 
 test("remote browser link validates a launcher descriptor without requiring VPS helper paths locally", () => {
