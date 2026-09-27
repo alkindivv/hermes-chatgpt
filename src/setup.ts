@@ -613,7 +613,7 @@ export async function setup(options: SetupOptions): Promise<SetupResult> {
   if (!launcherOwned) {
     saveConfig(config);
     installService(config);
-    if (changedWhileLoaded && options.restartService && existing) await restartService(existing);
+    if (changedWhileLoaded && options.restartService && existing) await restartService(existing, config);
     await waitForProxy(config);
   }
 

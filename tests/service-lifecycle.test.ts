@@ -18,6 +18,13 @@ describe("service drain lifecycle", () => {
       version: "6.1.2",
       accepting_turns: false,
     }, config)).toBe(false);
+    expect(serviceHealthIsReady({
+      service: "codex-chatgpt-web",
+      status: "ok",
+      mode: "full",
+      version: "6.1.2",
+      accepting_turns: true,
+    }, { mode: "full", releaseVersion: "6.1.0" })).toBe(false);
   });
 
   test("compensates when a drain may have reached the daemon before the client times out", async () => {

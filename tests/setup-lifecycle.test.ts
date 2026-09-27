@@ -166,7 +166,12 @@ test.skipIf(process.platform !== "darwin")("external service setup retains valid
     spyOn(service, "getServiceStatus").mockReturnValue({ installed: true, loaded: true } as never),
     spyOn(service, "assertServiceIdle").mockResolvedValue(undefined),
     spyOn(service, "installService").mockReturnValue({ installed: true, loaded: true } as never),
-    spyOn(service, "restartService").mockResolvedValue({ installed: true, loaded: true } as never),
+    spyOn(service, "restartService").mockImplementation(async (drainConfig, readyConfig) => {
+      expect(drainConfig.controlToken).toBe(existing.controlToken);
+      expect(readyConfig?.releaseVersion).toBe(configModule.defaultConfig("full").releaseVersion);
+      expect(readyConfig?.controlToken).not.toBe(drainConfig.controlToken);
+      return { installed: true, loaded: true } as never;
+    }),
     spyOn(service, "removeLegacyRuntimeArtifacts").mockImplementation(() => {}),
     spyOn(tunnelService, "getTunnelServiceStatus").mockReturnValue({ installed: false, loaded: false } as never),
     spyOn(tunnelService, "installTunnelService").mockImplementation(() => { calls.push("service"); return { installed: true, loaded: true } as never; }),

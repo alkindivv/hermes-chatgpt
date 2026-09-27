@@ -302,17 +302,30 @@ export async function assertServiceIdle(config: AppConfig): Promise<void> {
   await lease.release();
 }
 
-export async function restartService(config: AppConfig): Promise<ServiceStatus> {
+export async function restartService(
+  drainConfig: AppConfig,
+  readyConfig: AppConfig = drainConfig,
+): Promise<ServiceStatus> {
   assertMacOs();
-  if (!getServiceStatus().loaded) return startService();
-  const lease = await acquireDrain(config);
+  if (!getServiceStatus().loaded) {
+    const status = startService();
+    await waitForServiceReady(readyConfig);
+    return status;
+  }
+  const lease = await acquireDrain(drainConfig);
+  let oldDaemonUnloaded = false;
   try {
     runChecked("launchctl", ["bootout", serviceTarget()]);
     await waitForServiceUnloaded();
+    oldDaemonUnloaded = true;
     await bootstrapService(plistPath());
-    await waitForServiceReady(config);
+    await waitForServiceReady(readyConfig);
   } catch (error) {
-    return releaseDrainAfterFailure(lease, error);
+    // The drain lease belongs to the daemon that was running before bootout. Once that daemon is
+    // gone, attempting to resume it against the replacement process can only use stale credentials
+    // and obscures the actual restart failure (for example with HTTP 401 after control-token rotation).
+    if (!oldDaemonUnloaded) return releaseDrainAfterFailure(lease, error);
+    throw error instanceof Error ? error : new Error(String(error));
   }
   return getServiceStatus();
 }
