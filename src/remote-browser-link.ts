@@ -247,7 +247,7 @@ function fetchRemoteDescriptor(
 }
 
 export function remoteBrowserDescriptorIdentity(
-  descriptor: Pick<RemoteLauncherDescriptor, "pid" | "endpoint" | "control" | "helper" | "createdAt">,
+  descriptor: Pick<RemoteLauncherDescriptor, "pid" | "endpoint" | "control" | "helper">,
 ): string {
   return JSON.stringify({
     pid: descriptor.pid,
@@ -256,7 +256,6 @@ export function remoteBrowserDescriptorIdentity(
     controlToken: descriptor.control.token,
     helperExecutable: descriptor.helper.executable,
     helperScript: descriptor.helper.script,
-    createdAt: descriptor.createdAt,
   });
 }
 

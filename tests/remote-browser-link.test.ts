@@ -41,6 +41,18 @@ test("every remote browser SSH phase is non-interactive and bounded", () => {
   ]);
 });
 
+test("remote browser link identity ignores ordinary descriptor rewrites", () => {
+  const descriptor = parseRemoteLauncherDescriptor(remoteDescriptorJson());
+  const rewritten = {
+    ...descriptor,
+    surfaceId: "r".repeat(32),
+    surfaceTargets: { ["r".repeat(32)]: "rewritten-native-target" },
+    createdAt: "2026-09-27T12:00:00.000Z",
+  };
+  expect(remoteBrowserDescriptorIdentity(rewritten))
+    .toBe(remoteBrowserDescriptorIdentity(descriptor));
+});
+
 test("remote browser link identity changes when the remote launcher is replaced", () => {
   const descriptor = parseRemoteLauncherDescriptor(remoteDescriptorJson());
   const replaced = {
