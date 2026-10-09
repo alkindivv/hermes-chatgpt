@@ -1,18 +1,19 @@
 import { expect, test } from "bun:test";
 import {
-  chatGptLimitsPlanFromHeadings,
   chatGptUsageModelFromAnnouncements,
   detectChatGptLimitsPlan,
   readChatGptUsageAccount,
   supportsChatGptUsageTracking,
 } from "../src/adapters/chatgpt-web/limits";
 
-test("Limits requires an unambiguous current Pro tier instead of a badge or advertised price", () => {
-  expect(chatGptLimitsPlanFromHeadings(["Billing", "ChatGPT Pro 20x", "Transaction history"])).toBe("pro_200");
-  expect(chatGptLimitsPlanFromHeadings(["ChatGPT Pro 5x"])).toBe("pro_100");
-  for (const headings of [["Pro"], ["$200"], ["ChatGPT Plus"], ["ChatGPT Pro"],
-    ["ChatGPT Pro 5x", "ChatGPT Pro 20x"], ["Upgrade to ChatGPT Pro 20x"]]) {
-    expect(() => chatGptLimitsPlanFromHeadings(headings)).toThrow("Could not distinguish");
+test("Limits reads exact personal account tiers without inspecting billing UI", async () => {
+  for (const [planType, expected] of [["pro", "pro_200"], ["prolite", "pro_100"], ["promax", "unsupported"], ["free", "unsupported"]] as const) {
+    const page = {
+      url: () => "https://chatgpt.com/",
+      evaluate: async () => ({ userId: "u", accountId: "a", planType, structure: "personal", needsAttention: false }),
+      getByRole: () => { throw new Error("Plan detection must not inspect or change the UI"); },
+    };
+    expect((await detectChatGptLimitsPlan(page as never)).plan).toBe(expected);
   }
 });
 
@@ -61,4 +62,16 @@ test("unsupported plans and payment problems never activate browser plan inspect
   for (const personal of [false, true]) for (const planType of ["free", "plus", "pro", "prolite", "business", "unknown"]) {
     expect(supportsChatGptUsageTracking({ personal, planType })).toBe(personal && ["pro", "prolite"].includes(planType));
   }
+});
+
+
+test("usage accounting shares localized model parsing and rejects conflicting evidence", () => {
+  for (const separator of ["、", "，", "،", "؛", "：", "—", "。", ",", ";"]) {
+    expect(chatGptUsageModelFromAnnouncements([`6 Pro${separator}5 件中 5 番目。`])).toBe("gpt-6-pro");
+    expect(chatGptUsageModelFromAnnouncements([`5.6 Pro${separator}position`])).toBe("gpt-5.6-pro");
+  }
+  for (const other of ["6.1 Pro", "6 Sol Pro", "6 High", "7 Pro"]) {
+    expect(chatGptUsageModelFromAnnouncements(["6 Pro", other])).toBe("pro-unknown");
+  }
+  expect(chatGptUsageModelFromAnnouncements(["6 Pro for better answers"])).toBe("pro-unknown");
 });

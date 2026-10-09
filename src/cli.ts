@@ -280,7 +280,10 @@ async function loginCommand(args: string[]): Promise<void> {
       ...defaultConfig(),
       chromeExecutablePath,
       storageStatePath,
-    }, { continuation: continuation.promise });
+    }, {
+      continuation: continuation.promise,
+      onBrowserReady: () => { stdout.write(`${JSON.stringify({ version: 1, type: "passkey-login-ready" })}\n`); },
+    });
   } finally {
     continuation.close();
   }
@@ -362,6 +365,7 @@ async function setupCommand(args: string[]): Promise<void> {
   }
   if (zeroRiskPro || zeroRiskDefault) options.zeroRiskProEnabled = zeroRiskPro;
   options.replaceCodexRoute = takeFlag(args, "--replace-codex-route");
+  options.preserveDisconnectedRoute = takeFlag(args, "--preserve-disconnected-route");
   options.restartService = takeFlag(args, "--restart-service");
   assertNoArgs(args);
 
@@ -471,6 +475,7 @@ async function doctorCommand(args: string[]): Promise<void> {
 
 async function routeCommand(args: string[]): Promise<void> {
   const action = args.shift() ?? "status";
+  const forRuntimeRecovery = action === "disconnect" && takeFlag(args, "--for-runtime-recovery");
   assertNoArgs(args);
   const result = action === "status"
     ? (() => {
@@ -478,14 +483,16 @@ async function routeCommand(args: string[]): Promise<void> {
         return {
           installed: status.installed,
           active: status.active,
+          ...(status.journal && "reconnectOnStartup" in status.journal && status.journal.reconnectOnStartup
+            ? { reconnectOnStartup: true } : {}),
           ...(status.routeUrl ? { routeUrl: status.routeUrl } : {}),
           errors: status.errors,
         };
       })()
-    : action === "connect"
-      ? activateCodexIntegration()
+    : action === "connect" || action === "recover"
+      ? activateCodexIntegration({ recoveryOnly: action === "recover" })
       : action === "disconnect"
-        ? deactivateCodexIntegration()
+        ? deactivateCodexIntegration({ forRuntimeRecovery })
         : undefined;
   if (!result) throw new Error(`Unknown route action: ${action}`);
   stdout.write(`${JSON.stringify(result, null, 2)}\n`);
