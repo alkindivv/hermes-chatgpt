@@ -25,6 +25,11 @@ const {
   navigationOriginForLog,
 } = require("../electron/browser-host.cjs");
 
+function scriptEvents() {
+  const events = new EventEmitter();
+  return { on: events.on.bind(events), off: events.off.bind(events), isCrashed: () => false };
+}
+
 function primaryLoginFixture() {
   let loads = 0;
   let probes = 0;
@@ -61,18 +66,109 @@ test("failed primary navigation rejects login and an explicit retry replaces the
   assert.equal(loads(), 1, "an authenticated, valid document is preserved");
 });
 
-test("only failed main-frame loads and renderer exits invalidate the primary login document", async () => {
+test("nonfatal navigation events are ignored and a clean renderer exit does not auto-restart", async () => {
   const { host, contents, loads } = primaryLoginFixture();
   contents.emit("did-fail-load", {}, -331, "ERR_NETWORK_IO_SUSPENDED", contents.getURL(), false);
   contents.emit("did-fail-load", {}, -3, "ERR_ABORTED", contents.getURL(), true);
   await host.openLogin();
   assert.equal(loads(), 0);
-  contents.emit("render-process-gone", {}, { reason: "crashed", exitCode: 1 });
-  await assert.rejects(host.waitForAuthenticated(), /renderer stopped: crashed/);
+  contents.emit("render-process-gone", {}, { reason: "clean-exit", exitCode: 0 });
+  await assert.rejects(host.waitForAuthenticated(), /renderer stopped: clean-exit/);
   contents.emit("did-start-navigation", {}, contents.getURL(), true, true);
-  await assert.rejects(host.waitForAuthenticated(), /renderer stopped: crashed/);
+  await assert.rejects(host.waitForAuthenticated(), /renderer stopped: clean-exit/);
   await host.openLogin();
   assert.equal(loads(), 1);
+});
+
+
+function recoveringRendererFixture() {
+  let url = "https://chatgpt.com/?temporary-chat=true";
+  let dead = false;
+  let storageClears = 0;
+  let completeProbe;
+  const loads = [], events = [];
+  const contents = Object.assign(new EventEmitter(), {
+    isDestroyed: () => false, isCrashed: () => dead,
+    setWindowOpenHandler() {}, getURL: () => url, setBackgroundThrottling() {},
+    isLoadingMainFrame: () => false, stop() {},
+    session: { clearStorageData: async () => { storageClears++; } },
+    executeJavaScript: () => new Promise(resolve => { completeProbe = resolve; }),
+    loadURL: async next => {
+      loads.push(next);
+      contents.emit("did-start-navigation", {}, next, false, true);
+      url = next; dead = false;
+      await Promise.resolve();
+      contents.emit("did-finish-load");
+    },
+  });
+  const host = Object.assign(Object.create(BrowserHost.prototype), {
+    state: { authenticated: true, status: "ready" }, turnTabs: new Map(), view: { webContents: contents },
+    authenticationRevision: 0, primaryRendererReady: true,
+    setState(patch) { Object.assign(this.state, patch); }, snapshot() { return { ...this.state }; },
+    logger: { info(event) { events.push(event); }, error(event) { events.push(event); } },
+    markOwnedSurface: async () => {}, writeDescriptor() {}, syncViewVisibility() {}, applyViewportCss: async () => {},
+    show() {}, activateHomeSurface() {}, armHomeNavigationTimeout() {}, clearHomeNavigationTimeout() {},
+  });
+  host.bindWebContents();
+  return { host, contents, loads, events, storageClears: () => storageClears,
+    finishProbe: () => completeProbe?.({ sessionAuthenticated: true, temporary: true, composer: true }),
+    crash: () => { dead = true; contents.emit("render-process-gone", {}, { reason: "killed", exitCode: 9 }); },
+  };
+}
+
+test("a killed primary renderer retires its pending probe, recovers without clearing the session, and permits logout", async () => {
+  const fixture = recoveringRendererFixture();
+  const { host, contents, loads, events } = fixture;
+  const oldProbe = host.probeAuthentication();
+  fixture.crash();
+  await oldProbe;
+  await host.ready();
+  assert.deepEqual(loads, [IDLE_BROWSER_URL]);
+  assert.equal(host.primaryNavigationError, null);
+  assert.equal(host.primaryRendererReady, true);
+  assert.equal(host.authenticationProbe, null);
+  assert.equal(host.state.authenticated, true);
+  assert.equal(fixture.storageClears(), 0);
+  assert.ok(events.includes("browser.renderer_recovered"));
+  contents.executeJavaScript = async () => ({ sessionAuthenticated: false, temporary: true, composer: true, readyState: "complete" });
+  await host.logout();
+  assert.equal(host.manualOperation, null);
+  assert.equal(host.state.authenticated, false);
+  assert.equal(fixture.storageClears(), 1);
+  fixture.finishProbe(); // The old renderer's late result cannot authenticate a logged-out account.
+  await Promise.resolve();
+  assert.equal(host.state.authenticated, false);
+  assert.ok(events.includes("browser.logout_completed"));
+});
+
+test("renderer recovery waits for the current manual operation and does not restart a destroyed host", async () => {
+  const fixture = recoveringRendererFixture();
+  let finish;
+  const operation = fixture.host.withManualOperation("fixture", () => new Promise(resolve => { finish = resolve; }));
+  await Promise.resolve(); await Promise.resolve();
+  fixture.crash();
+  await Promise.resolve();
+  assert.deepEqual(fixture.loads, []);
+  finish();
+  await operation;
+  await fixture.host.ready();
+  assert.deepEqual(fixture.loads, [IDLE_BROWSER_URL]);
+  fixture.host.destroyed = true;
+  fixture.crash();
+  await Promise.resolve();
+  assert.equal(fixture.loads.length, 1);
+});
+
+test("a renderer crash during recovery fails once instead of entering a reload loop", async () => {
+  const fixture = recoveringRendererFixture();
+  let loads = 0;
+  fixture.contents.loadURL = async () => { loads++; fixture.crash(); };
+  fixture.crash();
+  await Promise.resolve();
+  await fixture.host.ready();
+  assert.equal(loads, 1);
+  assert.equal(fixture.host.state.status, "error");
+  assert.ok(fixture.events.includes("browser.renderer_recovery_failed"));
 });
 
 test("the primary navigation deadline is reported to the login waiter", async t => {
@@ -104,6 +200,7 @@ test("descriptor publishes native surface identities without inspecting renderer
   const contents = id => ({
     isDestroyed: () => false,
     getOrCreateDevToolsTargetId: () => { queried.push(id); return id; },
+    ...scriptEvents(),
     executeJavaScript: () => { throw new Error("Descriptor must not inspect renderer content"); },
   });
   const automatic = { surfaceId: "a".repeat(32), interactionMode: "automatic", view: { webContents: contents("auto-target") } };
@@ -769,7 +866,7 @@ test("turn tabs use the hidden viewport when the launcher window is hidden", () 
   assert.deepEqual(tab.deviceEmulationViewport, { width: 840, height: 656 });
 });
 
-test("new turn tabs defer device emulation until their renderer finishes loading", () => {
+test("new turn tabs defer device emulation until their document is ready", () => {
   const events = [];
   const tab = {
     id: "tab-loading-viewport",
@@ -781,8 +878,8 @@ test("new turn tabs defer device emulation until their renderer finishes loading
       setBounds: bounds => events.push(["bounds", bounds]),
       setVisible: visible => events.push(["visible", visible]),
       webContents: {
-        enableDeviceEmulation: () => assert.fail("emulation started before did-finish-load"),
-        disableDeviceEmulation: () => assert.fail("emulation cleared before did-finish-load"),
+        enableDeviceEmulation: () => assert.fail("emulation started before dom-ready"),
+        disableDeviceEmulation: () => assert.fail("emulation cleared before dom-ready"),
       },
     },
   };
@@ -802,6 +899,51 @@ test("new turn tabs defer device emulation until their renderer finishes loading
   ]);
   assert.equal(tab.deviceEmulationViewport, null);
   assert.equal(tab.deviceEmulationDirty, true);
+});
+
+test("navigation restores the task viewport at DOM readiness without completing bootstrap early", async () => {
+  const emulations = [];
+  let ownershipMarks = 0;
+  const contents = Object.assign(new EventEmitter(), {
+    setWindowOpenHandler() {}, getURL: () => "https://chatgpt.com/?temporary-chat=true",
+    enableDeviceEmulation: options => emulations.push(options.viewSize),
+  });
+  const tab = {
+    id: "navigating", status: "running", rendererReady: false,
+    bootstrapReady: false, deviceEmulationDirty: true,
+    view: { webContents: contents, setBounds() {}, setVisible() {} },
+  };
+  const host = Object.assign(Object.create(BrowserHost.prototype), {
+    turnTabs: new Map([[tab.id, tab]]), selectedTabId: "home",
+    boundsReady: true, bounds: { x: 280, y: 64, width: 840, height: 656 },
+    window: { getContentSize: () => [1120, 760], isVisible: () => false, isMinimized: () => false },
+    view: { setBounds() {}, setVisible() {} },
+    snapshot() { return {}; }, markTurnTabSurface: async () => { ownershipMarks++; },
+  });
+  host.bindTurnContents(tab);
+  contents.emit("did-start-navigation", {}, contents.getURL(), false, true);
+  host.syncViewVisibility();
+  assert.equal(emulations.length, 0);
+  contents.emit("dom-ready");
+  assert.deepEqual(emulations, [{ width: 840, height: 656 }]);
+  assert.equal(tab.loading, true);
+  assert.equal(tab.bootstrapReady, false);
+  assert.equal(ownershipMarks, 0);
+  contents.emit("did-start-navigation", {}, contents.getURL(), true, true);
+  contents.emit("did-start-navigation", {}, "https://example.com/iframe", false, false);
+  assert.equal(tab.rendererReady, true, "hash and iframe navigation must not invalidate the viewport");
+  contents.emit("did-finish-load");
+  await Promise.resolve();
+  assert.equal(tab.loading, false);
+  assert.equal(tab.bootstrapReady, true);
+  assert.equal(ownershipMarks, 1);
+  assert.equal(emulations.length, 1, "finishing resource loads must not resize the document again");
+  contents.emit("did-start-navigation", {}, contents.getURL(), false, true);
+  host.syncViewVisibility();
+  assert.equal(tab.rendererReady, false);
+  assert.equal(emulations.length, 1);
+  contents.emit("dom-ready");
+  assert.equal(emulations.length, 2, "each new document needs its viewport restored");
 });
 
 test("visible turn tabs keep the explicit viewport across background transitions", () => {
@@ -925,6 +1067,7 @@ test("guest and incomplete server sessions do not prove launcher authentication"
       webContents: {
         isDestroyed: () => false,
         getURL: () => "https://chatgpt.com/?temporary-chat=true",
+        ...scriptEvents(),
         executeJavaScript: async () => ({
           composer: true,
           temporary: true,
@@ -952,6 +1095,7 @@ test("launcher authentication is established by the complete server session", as
       webContents: {
         isDestroyed: () => false,
         getURL: () => "https://chatgpt.com/?temporary-chat=true",
+        ...scriptEvents(),
         executeJavaScript: async () => ({
           composer: true,
           temporary: true,
@@ -986,6 +1130,7 @@ test("a verified session stays signed in while its composer is unavailable", asy
       state: { authenticated: false }, activeTraceId: null, manualOperation: null,
       view: { webContents: {
         isDestroyed: () => false, getURL: () => url,
+        ...scriptEvents(),
         executeJavaScript: script => vm.runInNewContext(script, {
           location: { href: url },
           document: { readyState: "complete", querySelectorAll: selector => document.querySelectorAll(selector) },
@@ -1039,6 +1184,7 @@ test("session verification distinguishes a missing login from network and invali
       state: { authenticated: true }, activeTraceId: null, manualOperation: null,
       view: { webContents: {
         isDestroyed: () => false, getURL: () => url,
+        ...scriptEvents(),
         executeJavaScript: async script => {
           if (item.rendererError) throw new Error("private-renderer-error");
           return await vm.runInNewContext(script, {
@@ -1089,6 +1235,7 @@ test("a turn sign-in redirect updates the launcher and survives stale session pr
     syncPowerSaveBlocker() {}, removeTurnTab() {},
     view: { webContents: {
       isDestroyed: () => false, getURL: () => "https://chatgpt.com/?temporary-chat=true",
+      ...scriptEvents(),
       executeJavaScript: async () => {
         probes++;
         return { sessionAuthenticated: true, composer: true, temporary: true, url: "https://chatgpt.com/?temporary-chat=true" };
@@ -1135,6 +1282,7 @@ test("concurrent authentication probes share the same navigation and allow the n
     view: { webContents: {
       isDestroyed: () => false,
       getURL: () => "https://chatgpt.com/",
+      ...scriptEvents(),
       executeJavaScript: async () => {
         probes += 1;
         await ready;
@@ -1215,6 +1363,7 @@ test("a later sign-out wins over pending native and page authentication probes",
     turnTabs: new Map(),
     view: { webContents: {
       getURL: () => url, isDestroyed: () => false,
+      ...scriptEvents(),
       executeJavaScript: () => new Promise(resolve => { finishPage = resolve; }),
       session: { fetch: async url => {
         requests += 1;
@@ -1252,6 +1401,7 @@ test("session changes use the open page after invalidating an older check", asyn
       authenticationRevision: 0, state: { authenticated: false }, turnTabs: new Map(),
       view: { webContents: {
         getURL: () => "https://chatgpt.com/?temporary-chat=true", isDestroyed: () => false,
+        ...scriptEvents(),
         executeJavaScript: async () => {
           pageChecks++;
           if (pageChecks === 1) await new Promise(resolve => { finishOld = resolve; });
@@ -1280,6 +1430,7 @@ test("sign-out during a refreshed page check rejects its earlier signed-in resul
     authenticationRevision: 0, state: { authenticated: false }, turnTabs: new Map(),
     view: { webContents: {
       getURL: () => "https://chatgpt.com/?temporary-chat=true", isDestroyed: () => false,
+      ...scriptEvents(),
       executeJavaScript: async () => {
         const check = ++pageChecks;
         if (check === 1) await new Promise(resolve => { finishPage = resolve; });
@@ -1459,6 +1610,7 @@ test("passkey login imports only validated state and re-proves the Launcher sess
     session: browserSession,
     isDestroyed: () => false,
     loadURL: async url => calls.push(["load", url]),
+    ...scriptEvents(),
     executeJavaScript: async script => calls.push(["script", script]),
   };
   const fixture = Object.assign(Object.create(BrowserHost.prototype), {
@@ -1668,6 +1820,7 @@ test("OAuth completion is re-proved on the primary Temporary Chat surface before
   const completedAuthView = {
     webContents: {
       isDestroyed: () => false,
+      ...scriptEvents(),
       executeJavaScript: async () => ({
         composer: true,
         temporary: false,
@@ -1688,6 +1841,7 @@ test("OAuth completion is re-proved on the primary Temporary Chat surface before
           ? "https://chatgpt.com/?temporary-chat=true"
           : "https://chatgpt.com/auth/login",
         isDestroyed: () => false,
+        ...scriptEvents(),
         executeJavaScript: async () => ({
           composer: primaryReady,
           temporary: primaryReady,
@@ -1732,6 +1886,7 @@ test("a successful primary login redirect is re-proved on Temporary Chat before 
       webContents: {
         getURL: () => currentUrl,
         isDestroyed: () => false,
+        ...scriptEvents(),
         executeJavaScript: async () => ({
           composer: true,
           temporary: currentUrl === "https://chatgpt.com/?temporary-chat=true",
@@ -1760,6 +1915,7 @@ test("an authenticated primary surface closes a stale embedded auth popup", asyn
   const staleAuthView = {
     webContents: {
       isDestroyed: () => false,
+      ...scriptEvents(),
       executeJavaScript: async () => ({
         composer: false,
         temporary: false,
@@ -1779,6 +1935,7 @@ test("an authenticated primary surface closes a stale embedded auth popup", asyn
       webContents: {
         getURL: () => "https://chatgpt.com/?temporary-chat=true",
         isDestroyed: () => false,
+        ...scriptEvents(),
         executeJavaScript: async () => ({
           composer: true,
           temporary: true,
@@ -2512,6 +2669,7 @@ test("startup sign-in redirects become signed-out state while real navigation er
           if (redirected) url = "https://chatgpt.com/auth/login?next=%2F";
           throw failure;
         },
+        ...scriptEvents(),
         executeJavaScript: async () => { throw new Error("must not probe a login page"); },
       } },
     });
@@ -3840,6 +3998,7 @@ test("switching from Zero Risk to Automatic marks the already-loaded primary sur
     selectedTabId: "home",
     surfaceId: "automatic-primary-surface",
     view: { webContents: {
+      ...scriptEvents(),
       executeJavaScript: async script => { scripts.push(script); },
       isDestroyed: () => false,
     } },
@@ -3909,6 +4068,7 @@ test("Zero Risk fails closed at every primary-surface inspection boundary", asyn
     view: { webContents: {
       isDestroyed: () => false,
       getURL: () => "https://chatgpt.com/?temporary-chat=true",
+      ...scriptEvents(),
       executeJavaScript: async () => { domOperations += 1; },
       insertCSS: async () => { domOperations += 1; return "css-key"; },
       removeInsertedCSS: async () => { domOperations += 1; },

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { createContext, runInContext } from "node:vm";
 import type { Locator } from "playwright-core";
 import { ChatGptBrowserWorker, ChatGptCompletionTracker, ChatGptVisibleTraceTracker, CHATGPT_COMPLETION_SETTLE_MS } from "../src/adapters/chatgpt-web/browser-worker";
-import { ChatGptMarkdownBuffer, ChatGptMarkdownConsistencyError, type ChatGptMarkdownSegment } from "../src/adapters/chatgpt-web/markdown";
+import { chatGptHtmlToMarkdown, ChatGptMarkdownBuffer, ChatGptMarkdownConsistencyError, type ChatGptMarkdownSegment } from "../src/adapters/chatgpt-web/markdown";
 
 const smokeHtml = readFileSync(new URL("./fixtures/chatgpt-dil-smoke.html", import.meta.url), "utf8");
 const powerCompleteHtml = readFileSync(new URL("./fixtures/chatgpt-power-complete.html", import.meta.url), "utf8");
@@ -80,6 +80,50 @@ async function snapshots(html: string, changes: Array<(document: Document) => vo
     else delete window.HTMLElement.prototype.append;
   }
 }
+
+const followupFixture = (root = 'data-markdown-text-style="assistant-message"') => `<section id="turn"><div data-content-search-unit-key="answer"><h4 data-conversation-role="assistant"></h4><div ${root}>
+<p>The report is complete.</p>
+<div class="relative min-w-0 px-3"><div class="flex min-w-0 flex-col items-start">
+<button class="group/suggested-followup"><span>Clarify the result</span></button>
+<button class="group/suggested-followup"><span>Shorten the report</span></button>
+</div><div aria-hidden="true" class="pointer-events-none start-0 top-0 w-max">
+<div><span>Clarify the result</span><span>Shorten the report</span></div>
+</div></div></div></div><button data-testid="copy-turn-action-button" aria-label="Copy"></button></section>`;
+
+test("suggested follow-up sizing copies stay out of the answer", async () => {
+  for (const root of ['class="markdown"', 'data-markdown-text-style="assistant-message"']) {
+    const result = await snapshot(followupFixture(root));
+    expect(result.visibleText).toBe("The report is complete.");
+    expect(chatGptHtmlToMarkdown(result.fullHtml)).toBe("The report is complete.");
+    expect(result.markdownSegments.map(segment => segment.text).join("\n")).not.toContain("Clarify the result");
+    expect(result.fullHtml).not.toContain("Shorten the report");
+    expect(result.completionActionVisible).toBeTrue();
+  }
+});
+
+test("changing follow-up sizing labels cannot rewrite delivered answer text", async () => {
+  const [before, after] = await snapshots(followupFixture(), [document => {
+    document.querySelector('[aria-hidden="true"] span')!.textContent = "A hydrated suggestion";
+  }]);
+  expect(before!.visibleText).toBe("The report is complete.");
+  expect(after!.visibleText).toBe(before!.visibleText);
+  expect(after!.fullHtml).toBe(before!.fullHtml);
+  const buffer = new ChatGptMarkdownBuffer(undefined, 0);
+  buffer.observe(before!.markdownSegments, 0);
+  buffer.observe(after!.markdownSegments, 1);
+  expect(buffer.finish().markdown).toBe("The report is complete.");
+});
+
+test("follow-up filtering preserves unrelated content and file-reference labels", async () => {
+  const html = followupFixture().replace('<p>The report is complete.</p>', `<p>The report is complete.</p>
+<p><span aria-hidden="true">Unrelated answer content.</span><button class="behavior-btn entity-underline">report.pdf</button></p>
+<pre><code>&lt;button class="group/suggested-followup"&gt;example&lt;/button&gt;</code></pre>`);
+  const result = await snapshot(html);
+  expect(result.visibleText).toContain("Unrelated answer content.");
+  expect(result.visibleText).toContain("report.pdf");
+  expect(chatGptHtmlToMarkdown(result.fullHtml)).toContain('class="group/suggested-followup"');
+  expect(result.visibleText).not.toContain("Clarify the result");
+});
 
 test("captured Activity progress is commentary before any assistant answer exists", async () => {
   const progress = await snapshot(powerActivityHtml);
@@ -316,6 +360,50 @@ test("reported code-block containers preserve code while their localized toolbar
   }
 });
 
+test("captured CodeMirror reply preserves its language, fences and line boundaries", async () => {
+  const html = readFileSync(new URL("./fixtures/chatgpt-codemirror-reply-2026-10-11.html", import.meta.url), "utf8");
+  const captured = await snapshot(html);
+  expect(chatGptHtmlToMarkdown(captured.fullHtml)).toBe("# Probe\n\n- First item\n- Second item\n\n```python\nprint(1)\n```");
+  const code = 'def sample():\n    value = "日本語 & <x>"\n\n    return value\n';
+  const frames = await snapshots(html, [
+    doc => {
+      const editor = doc.querySelector(".cm-content")!;
+      editor.textContent = "";
+      for (const text of code.split("\n")) {
+        const line = doc.createElement("div"); line.className = "cm-line";
+        if (text) line.textContent = text; else line.appendChild(doc.createElement("br"));
+        editor.appendChild(line);
+      }
+    },
+    doc => { doc.querySelector('[data-markdown-copy="exclude"]')!.textContent = "コード"; },
+  ]);
+  const buffer = new ChatGptMarkdownBuffer(markdown => markdown, 0);
+  buffer.observe(frames[1]!.markdownSegments, 0);
+  buffer.observe(frames[2]!.markdownSegments, 1000);
+  expect(buffer.currentSnapshotIsConsistent()).toBeTrue();
+  expect(buffer.finish().markdown).toBe(`# Probe\n\n- First item\n- Second item\n\n\`\`\`python\n${code}\`\`\``);
+  expect(frames[2]!.fullHtml).not.toContain("コード");
+  expect(frames[2]!.fullHtml).not.toContain("cm-content");
+});
+
+test("CodeMirror source changes remain real answer edits and incomplete editors fail explicitly", async () => {
+  const html = readFileSync(new URL("./fixtures/chatgpt-codemirror-reply-2026-10-11.html", import.meta.url), "utf8");
+  const frames = await snapshots(html, [
+    doc => { doc.querySelector(".cm-line")!.textContent = "print(2)"; },
+  ]);
+  const buffer = new ChatGptMarkdownBuffer(markdown => markdown, 0);
+  buffer.observe(frames[0]!.markdownSegments, 0);
+  buffer.finish();
+  buffer.observe(frames[1]!.markdownSegments, 1000);
+  expect(() => buffer.finish()).toThrow("ChatGPT changed a completed text block");
+  for (const missingSource of [
+    html.replace('<div class="cm-line">', '<div style="height:200px"></div><div class="cm-line">'),
+    html.replace('<div class="cm-line">', '<div class="cm-content" data-language="python"></div><div class="cm-line">'),
+  ]) {
+    await expect(snapshot(missingSource)).rejects.toThrow("one complete set of code lines");
+  }
+});
+
 test("known rich-content controls cannot keep a finished answer waiting, but answer edits restart settling", async () => {
   // Chart and preview boundaries were captured in DEV; their controls can change
   // after generation has stopped. Completion must use the same content as delivery.
@@ -513,6 +601,43 @@ test("unmatched final blocks report structural evidence without exposing answer 
     expect(diagnostic).toMatchObject({ reason: "unanchored_block", observedTag: "div", committedTag: "p", observedKeyMode: "dom-node", committedKeyMode: "dom-node", observedIndex: 0, committedIndex: 0 });
     expect(JSON.stringify(diagnostic)).not.toContain("Private");
   }
+});
+
+test("recreated horizontal rules preserve their Markdown and position among delivered paragraphs", async () => {
+  const html = `<section id="turn"><div class="markdown"><p>First.</p><hr><p>Middle.</p><hr><p>Last.</p><p>Pending.</p></div></section>`;
+  const frames = await snapshots(html, [doc => {
+    for (const hr of Array.from(doc.querySelectorAll("hr"))) hr.replaceWith(doc.createElement("hr"));
+  }, doc => {
+    doc.querySelector(".markdown")!.firstElementChild!.remove();
+    doc.querySelector("p")!.textContent = "Changed delivered text.";
+  }]);
+  const buffer = new ChatGptMarkdownBuffer(undefined, 0);
+  const streamed = buffer.observe(frames[0]!.markdownSegments, 0);
+  expect(streamed).toContain("First.");
+  expect(streamed.match(/\* \* \*/g)).toHaveLength(2);
+  expect(buffer.observe(frames[1]!.markdownSegments, 1)).toBe("");
+  expect(buffer.finish().markdown).toBe(chatGptHtmlToMarkdown(html));
+  buffer.observe(frames[2]!.markdownSegments, 2);
+  expect(() => buffer.finish()).toThrow(ChatGptMarkdownConsistencyError);
+});
+
+test("repeated rules need ordered anchors and an inserted rule cannot masquerade as delivered content", () => {
+  const p = (key: string, text: string): ChatGptMarkdownSegment => ({ key, tag: "p", html: `<p>${text}</p>`, text, streamable: true });
+  const hr = (key: string): ChatGptMarkdownSegment => ({ key, tag: "hr", html: "<hr>", text: "", streamable: true });
+  const original = [p("a", "First"), hr("r1"), p("b", "Middle"), hr("r2"), p("c", "Last")];
+  for (const observed of [
+    [hr("new"), p("c", "Last")], // Either rule could be the remounted one.
+    [p("b", "Middle"), hr("new"), p("a", "First")], // Real reordering stays invalid.
+  ]) {
+    const buffer = new ChatGptMarkdownBuffer(undefined, 0);
+    buffer.observe(original, 0);
+    buffer.observe(observed, 1);
+    expect(() => buffer.finish()).toThrow(ChatGptMarkdownConsistencyError);
+  }
+  const buffer = new ChatGptMarkdownBuffer(undefined, 0);
+  buffer.observe([p("a", "First"), p("c", "Last")], 0);
+  buffer.observe([p("a", "First"), hr("inserted"), p("c", "Last")], 1);
+  expect(() => buffer.finish()).toThrow(ChatGptMarkdownConsistencyError);
 });
 
 test("late source ranges preserve the same answer blocks across subsequent remounts", async () => {

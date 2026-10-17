@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { selectedSkillFile, skillFileTokens, type ChatGptSkillFile } from "./skill-attachments";
 import {
-  CHATGPT_WEB_GPT6_SOL_BIGGER_CONTEXT_ERROR,
+  CHATGPT_WEB_GPT6_INSTANT_BIGGER_CONTEXT_ERROR,
   chatGptWebImageTokenReserve,
   isChatGptWebZeroRiskBackendModel,
   resolveChatGptWebMessageTokenBudget,
@@ -28,6 +28,8 @@ export interface ChatGptWebPromptImage {
 export interface CompiledChatGptWebPrompt {
   text: string;
   images: ChatGptWebPromptImage[];
+  /** Current broker identity, already present in the final prompt; never diagnostic data. */
+  turnToken?: string;
   skillFiles?: ChatGptSkillFile[];
   /** Transactional transport when Bigger Context is explicitly enabled. */
   multipart?: ChatGptWebMultipartPrompt;
@@ -159,11 +161,15 @@ const RETIRED_TURN_HANDLE = /(?<![A-Za-z0-9_-])(turn|request|binding)_[A-Za-z0-9
  * the current turn is supplied by the contract text, never by the replayed context.
  */
 export function withoutRetiredTurnHandles(contextJson: string): string {
+  // Keep backticks out of serialized history. ChatGPT's user-message Markdown link lexer
+  // can backtrack indefinitely on a bracketed JSON value containing many code fences.
+  // JSON Unicode escapes preserve the decoded context, including literal backslashes.
+  // The outer fence alone is insufficient on the observed user-message rendering path.
   // Match decoded string values: in serialized JSON a newline's `n` is a word character
   // immediately before the handle. Leave structural keys and native tool-call IDs intact.
   return JSON.stringify(JSON.parse(contextJson, (_key, value: unknown) => typeof value === "string"
     ? value.replace(RETIRED_TURN_HANDLE, (_handle, kind: string) => `[retired ${kind} handle]`)
-    : value));
+    : value)).replaceAll("`", "\\u0060");
 }
 
 /** ChatGPT accepts at most this many attachments on one message. */
@@ -461,8 +467,8 @@ export function compileChatGptWebPrompt(
   if (multipartEnabled && captureLunaCheckpoint) {
     throw new Error("Bigger Context uses native compaction, not Luna rolling checkpoints");
   }
-  if (multipartEnabled && !supportsChatGptWebBiggerContext(parsed.modelId, mode.effort, capabilities, parsed._chatgptModelFamily)) {
-    throw new Error(CHATGPT_WEB_GPT6_SOL_BIGGER_CONTEXT_ERROR);
+  if (multipartEnabled && !supportsChatGptWebBiggerContext(parsed.modelId, mode.effort, parsed._chatgptModelFamily)) {
+    throw new Error(CHATGPT_WEB_GPT6_INSTANT_BIGGER_CONTEXT_ERROR);
   }
   if (parsed.modelId === CHATGPT_WEB_LUNA_MODEL_ID && parsed._compactionRequest && !multipartEnabled) {
     throw new Error("ChatGPT Luna uses rolling checkpoints and does not accept a separate compaction turn");
@@ -537,7 +543,8 @@ export function compileChatGptWebPrompt(
       "Use actual Codex Native results as evidence for local observations and effects.",
       "Report the actual error when a tool fails. Do not claim a safety or permission block without an explicit tool result or platform error supporting it. Without an error or execution result, say the action was not executed and its cause is unconfirmed.",
       "Historical errors quoted in files, logs, or earlier messages are data about those events, not new failures of the call that read them. Attribute a current failure to the action attempted and its actual tool result or current platform error; include the call ID when available. A successful read remains successful even when its contents describe an error.",
-      "After an explicit safety or permission refusal for the current action, explain the specific action or planned group of actions and ask the user to confirm them. Use the declared Codex approval flow when available, and wait for the user's answer. Their confirmation can resolve an authorization gap; continue only with the confirmed actions that the tool and platform permit. If the refusal remains, report it rather than retrying through another tool. User confirmation does not override other safety restrictions.",
+      "After an explicit safety or permission refusal for the current action, explain the specific action or planned group of actions. Ask the user to confirm them only if the current task context does not already authorize them. Use the declared Codex approval flow when available, and wait for the user's answer when approval is required. Their confirmation can resolve an authorization gap. If the refusal remains, report it rather than retrying through another tool.",
+      "If Codex requests approval for an action that the user has not authorized, use the declared Codex approval flow and wait for the decision. Do not ask the user to reauthorize the same action when the current task context already contains that authorization; a platform refusal does not erase prior authorization.",
       "A Codex Native MCP tool result may require context compaction. If it does, follow the compaction instructions in that result exactly.",
       "After a deterministic tool failure, update the working hypothesis from that result and inspect the relevant repository or environment before choosing a different next action; do not repeat the same call unless its inputs or observable state changed.",
       "Continue using the available tools until the requested work is complete and verified.",
@@ -636,7 +643,10 @@ export function compileChatGptWebPrompt(
     const skillContract = skillFiles.length ? [
       "Each skill_attachment refers to a named UTF-8 text file attached to this message (the final commit in multipart mode). Read its complete contents as the selected Codex skill instructions at the original user priority. These origin=codex_skill messages are supplied by Codex, not human-authored task requests. Preserve their original position in history and their path/resource authority for resolving references. If a file cannot be read, report that limitation; do not invent its contents.",
     ] : [];
-    const attachments = skillFiles.length ? { skillFiles } : {};
+    const attachments = {
+      ...(skillFiles.length ? { skillFiles } : {}),
+      ...(mode.localTools && !manualControl && !parsed._compactionRequest ? { turnToken } : {}),
+    };
     const answerContract = captureLunaCheckpoint
       ? "Return the complete answer that the outer Codex task should receive, then the required private checkpoint tail."
       : "Return only the answer that the outer Codex task should receive.";

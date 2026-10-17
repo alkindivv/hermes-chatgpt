@@ -12,7 +12,7 @@ import {
   extractChatGptThreadSpawnLineage,
   extractChatGptRootThreadMetadata,
   hasCurrentChatGptEnvironmentContext,
-  hasChatGptCalendarEnvironmentDelta,
+  extractChatGptCalendarEnvironmentDelta,
   hasRawChatGptEnvironmentContext,
   unattributedChatGptEnvironmentMessages,
   isChatGptCompactionContinuation,
@@ -126,25 +126,30 @@ function authority(environment: ChatGptTurnEnvironment, updatedAt: number): Stor
   };
 }
 
-function sameAuthority(claim: ChatGptEnvironmentClaim, right: ChatGptTurnEnvironment, allowAdditionalWritableRoots = false): boolean {
+function conflictingAuthorityFields(claim: ChatGptEnvironmentClaim, right: ChatGptTurnEnvironment): string[] {
   const left = claim.environment;
-  const samePaths = (a: string[], b: string[]): boolean => {
-    const expected = new Set(b.map(pathIdentity));
-    return a.length === expected.size && a.every(path => expected.has(pathIdentity(path)));
-  };
-  return left.sandboxPolicy.type !== "external" && right.sandboxPolicy.type !== "external"
-    && pathIdentity(left.cwd) === pathIdentity(right.cwd)
-    && samePaths(left.roots, right.roots)
-    // Filesystem envelopes can omit Codex's extra output directories. The current
-    // native rollout remains the authority returned to the caller, never the claim.
-    && (allowAdditionalWritableRoots
-      ? left.writableRoots.every(path => right.writableRoots.some(root => pathIdentity(root) === pathIdentity(path)))
-      : samePaths(left.writableRoots, right.writableRoots))
-    && left.sandboxPolicy.type === right.sandboxPolicy.type
-    // An envelope that does not state its network policy cannot contradict the rollout on it.
-    && (left.sandboxPolicy.type === "dangerFullAccess" || !claim.statesNetworkAccess
-      || (right.sandboxPolicy.type !== "dangerFullAccess"
-        && left.sandboxPolicy.networkAccess === right.sandboxPolicy.networkAccess));
+  const claimedRoots = new Set(left.roots.map(pathIdentity));
+  const nativeRoots = new Set(right.roots.map(pathIdentity));
+  const nativeGrants = new Set([...right.roots, ...right.writableRoots].map(pathIdentity));
+  const fields: string[] = [];
+  if (pathIdentity(left.cwd) !== pathIdentity(right.cwd)) fields.push("cwd");
+  // Codex 0.163 can omit workspace_roots in native rollouts while the envelope
+  // includes output directories. Extra claimed roots must be covered by a
+  // native grant and no native workspace root may disappear.
+  if ([...nativeRoots].some(root => !claimedRoots.has(root))
+    || [...claimedRoots].some(root => !nativeGrants.has(root))) fields.push("workspace_roots");
+  // Filesystem envelopes can omit additional native writable output directories.
+  // Only the current native rollout supplies the returned permissions.
+  if (!left.writableRoots.every(path => right.writableRoots.some(root => pathIdentity(root) === pathIdentity(path)))) {
+    fields.push("writable_roots");
+  }
+  if (left.sandboxPolicy.type !== right.sandboxPolicy.type) fields.push("sandbox_policy");
+  if (left.sandboxPolicy.type !== "dangerFullAccess" && left.sandboxPolicy.type !== "external"
+    && right.sandboxPolicy.type !== "dangerFullAccess" && right.sandboxPolicy.type !== "external"
+    && claim.statesNetworkAccess && left.sandboxPolicy.networkAccess !== right.sandboxPolicy.networkAccess) {
+    fields.push("network_access");
+  }
+  return fields;
 }
 
 /**
@@ -182,11 +187,15 @@ export class ChatGptThreadEnvironmentStore {
       const hasCurrentContext = hasCurrentChatGptEnvironmentContext(parsed);
       const lineage = extractChatGptThreadSpawnLineage(parsed);
       const currentCompaction = hasCurrentContext && isChatGptCompactionContinuation(parsed);
-      const historicalMessages = hasCurrentContext && !currentCompaction && lineage
+      // Root tasks also retain unattributed environment fragments after compaction.
+      // They are historical only when the exact native record predates this task;
+      // neither the fragment nor the cache supplies the current authority.
+      const historicalMessages = hasCurrentContext && !currentCompaction
         ? unattributedChatGptEnvironmentMessages(parsed) : undefined;
       const steeringClaim = hasCurrentContext && !currentCompaction
         ? extractChatGptSteeringEnvironmentClaim(parsed) : undefined;
-      const calendarDelta = hasCurrentContext && !currentCompaction && hasChatGptCalendarEnvironmentDelta(parsed);
+      const calendarDelta = hasCurrentContext && !currentCompaction
+        ? extractChatGptCalendarEnvironmentDelta(parsed) : undefined;
       if (hasCurrentContext && !currentCompaction && !initialClaim && !historicalMessages && !steeringClaim && !calendarDelta) throw error;
       const currentClaim = initialClaim ?? (currentCompaction ? extractChatGptContinuationEnvironmentClaim(parsed) : steeringClaim);
       const rolloutIdentity = lineage ?? extractChatGptRootThreadMetadata(parsed);
@@ -205,12 +214,21 @@ export class ChatGptThreadEnvironmentStore {
           tools: parsed.context.tools,
         });
         if (rolloutEnvironment) {
-          if (calendarDelta && rolloutEnvironment.sandboxPolicy.type !== "dangerFullAccess") {
-            throw new Error("Calendar environment delta conflicts with its current Codex rollout");
+          if (calendarDelta) {
+            const nativeRoots = new Set(rolloutEnvironment.roots.map(pathIdentity));
+            if (rolloutEnvironment.sandboxPolicy.type !== "dangerFullAccess"
+              || calendarDelta.workspaceRoots.some(roots => roots.length !== nativeRoots.size
+                || roots.some(root => !nativeRoots.has(root)))) {
+              throw new Error("Calendar environment delta conflicts with its current Codex rollout");
+            }
           }
-          if (currentClaim && !sameAuthority(currentClaim, rolloutEnvironment, initialClaim !== undefined || steeringClaim !== undefined)) {
+          const conflicts = currentClaim ? conflictingAuthorityFields(currentClaim, rolloutEnvironment) : [];
+          if (conflicts.length > 0) {
             const source = currentCompaction ? "Compaction continuation" : initialClaim ? "Current" : "Steering";
-            throw new Error(`${source} environment conflicts with its current Codex rollout`);
+            // Field names are safe to export; paths, request text and permission
+            // contents are deliberately excluded from both the log and UI error.
+            console.warn(`[chatgpt-web] trusted environment conflict (source=${source}, fields=${conflicts.join(",")})`);
+            throw new Error(`${source} environment conflicts with its current Codex rollout (fields: ${conflicts.join(", ")})`);
           }
           this.set(rolloutIdentity.threadId, rolloutEnvironment);
           return rolloutEnvironment;

@@ -14,7 +14,9 @@ import {
   extractChatGptTurnIdentity,
   extractCodexTurnIdentityFromBody,
   extractChatGptCompactionSourceRevision,
+  isCodexComposerPrediction,
 } from "./adapters/chatgpt-web/environment";
+import { assertComposerPredictionFits, configureComposerPrediction } from "./composer-predictions";
 import { rememberCompactionContinuation } from "./adapters/chatgpt-web/compaction-continuation";
 import { bridgeToResponsesSSE, buildResponseJSON, formatErrorResponse } from "./bridge";
 import type { AppConfig } from "./config";
@@ -650,11 +652,14 @@ export async function responseRequest(
     ? (raw as { previous_response_id?: unknown }).previous_response_id
     : undefined;
   const expanded = expandPreviousResponseInput(raw);
+  const prediction = isCodexComposerPrediction(raw);
+  let executionConfig = config;
   let parsed: CodexParsedRequest;
   let route: ChatGptWebModelRoute;
   try {
     parsed = parseRequest(expanded);
-    route = routeChatGptWebRequest(parsed, config);
+    if (prediction) executionConfig = configureComposerPrediction(parsed, config);
+    route = routeChatGptWebRequest(parsed, executionConfig);
     const identity = extractChatGptTurnIdentity(parsed);
     if (identity.threadId && identity.turnId) {
       options.onTurnIdentity?.({ threadId: identity.threadId, turnId: identity.turnId });
@@ -676,6 +681,16 @@ export async function responseRequest(
       "invalid_request_error",
       "Local continuation state for previous_response_id is unavailable; refusing to run ChatGPT Web with partial Codex context. Compact the Codex task or start a new task before retrying.",
     );
+  }
+
+  if (prediction) {
+    try {
+      assertComposerPredictionFits(parsed, executionConfig);
+    } catch (error) {
+      // An optional suggestion must not compact/retry the task merely to make itself fit.
+      return formatErrorResponse(400, "invalid_request_error", `Next-message prediction skipped: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    console.info(`[chatgpt-web] composer_prediction model=${route.slug} effort=medium`);
   }
 
   const compaction = parsed._compactionRequest === true;
@@ -702,10 +717,12 @@ export async function responseRequest(
     const body = parsed._rawBody as { input?: unknown[] };
     // v1 installs the bounded user-message output, whereas v2 retains the original source.
     // Authenticate both exact producer-defined representations, never arbitrary rewrites.
+    // Inspect the literal retained representation: an unchanged summary can match the
+    // previous checkpoint, but must not substitute its recovered delegation here.
     const v1Source = extractChatGptCompactionSourceRevision({
       ...parsed,
       _rawBody: { ...body, input: buildCompactV1Output(extractCompactUserMessages(body.input), summary) },
-    });
+    }, { recoverCheckpoint: false });
     rememberCompactionContinuation(parsed, identity, [source, v1Source], summary);
   };
   if (compaction && route.backendModel === CHATGPT_WEB_LUNA_BACKEND_MODEL && !config.experimentalBiggerContext) {
@@ -725,7 +742,7 @@ export async function responseRequest(
     parsed.context.messages.push({ role: "user", content: COMPACT_PROMPT, timestamp: Date.now() });
   }
 
-  const provider = providerConfig(config);
+  const provider = providerConfig(executionConfig);
   let traceId: string | undefined;
   try {
     traceId = chatGptWebTraceId(provider, parsed);

@@ -494,6 +494,10 @@ export function createChatGptWebAdapter(
     });
     const trace = new ChatGptTraceFeed();
     const text = new ChatGptTextFeed();
+    const onGenerationProgress = (): void => {
+      trace.recordProgress();
+      hooks.onCompactionProgress?.();
+    };
     const observedCapabilityTokens = new Set<string>();
     const observeCapabilityRetirement = (
       turnToken: string,
@@ -718,7 +722,8 @@ export function createChatGptWebAdapter(
         ...multipartProgressLifecycle,
         onReasoningSummary: (text, continuation) => trace.push({ kind: "reasoning", text, ...(continuation ? { continuation: true } : {}) }),
         onCommentary: (text, continuation) => trace.push({ kind: "commentary", text, ...(continuation ? { continuation: true } : {}) }),
-        onTextDelta: delta => text.push(delta),
+        onTextDelta: delta => { text.push(delta); onGenerationProgress(); },
+        onGenerationProgress,
         ...(captureLunaCheckpoint ? {
           captureLunaCheckpoint: true,
           onLunaCheckpoint: captureCheckpoint,
@@ -785,7 +790,8 @@ export function createChatGptWebAdapter(
       ...multipartProgressLifecycle,
       onReasoningSummary: (text, continuation) => trace.push({ kind: "reasoning", text, ...(continuation ? { continuation: true } : {}) }),
       onCommentary: (text, continuation) => trace.push({ kind: "commentary", text, ...(continuation ? { continuation: true } : {}) }),
-      onTextDelta: delta => text.push(delta),
+      onTextDelta: delta => { text.push(delta); onGenerationProgress(); },
+      onGenerationProgress,
       externalProgress,
       completionFence: {
         begin: async () => broker.beginCompletionFence(await token.promise),
@@ -1012,6 +1018,7 @@ export function createChatGptWebAdapter(
                     }
                   };
                   let source: ChatGptTurnSession | undefined;
+                  let stopSourceProgress: (() => void) | undefined;
                   let preserveFinalResponse = false;
                   try {
                     if (freshConversationPerTurn) {
@@ -1044,6 +1051,8 @@ export function createChatGptWebAdapter(
                     if (!source || !retainedKey) {
                       return await runFreshCompaction("source_unavailable_before_handoff");
                     }
+                    // Renew only for observed source activity, never an idle helper heartbeat.
+                    stopSourceProgress = source.runtime.trace.observeProgress(armHandoffDeadline);
                     let rawSummary: string;
                     if (manualRequest && source.isActive() && source.runtime.mode === "tools") {
                       const zeroRiskSummary = await settleActiveZeroRiskCompactionSource(
@@ -1076,6 +1085,7 @@ export function createChatGptWebAdapter(
                       preserveFinalResponse = !settlement.compactionInstructionDelivered;
                       // The previous response has physically settled. Its waiting time must not
                       // consume the independent, bounded request for the retained checkpoint.
+                      stopSourceProgress?.();
                       handoffPhase = "retained_checkpoint";
                       armHandoffDeadline();
                       rawSummary = await requestRetainedCompactionHandoff(
@@ -1095,6 +1105,7 @@ export function createChatGptWebAdapter(
                         await withAbort(source.physicalSettlement, operationSignal);
                         preserveFinalResponse = true;
                       }
+                      stopSourceProgress?.();
                       handoffPhase = "retained_checkpoint";
                       armHandoffDeadline();
                       rawSummary = await requestRetainedCompactionHandoff(
@@ -1146,6 +1157,7 @@ export function createChatGptWebAdapter(
                     }
                     throw handoffError;
                   } finally {
+                    stopSourceProgress?.();
                     if (handoffTimer) clearTimeout(handoffTimer);
                   }
                 },
@@ -1314,6 +1326,7 @@ export function createChatGptWebAdapter(
                 for (const message of results) {
                   await broker.completeTool(turnToken, message.toolCallId, brokerResult(message));
                   session.runtime.externalProgress.recordToolResult();
+                  session.runtime.trace.recordProgress();
                   session.markResultDelivered(message.toolCallId);
                 }
               }
@@ -1347,6 +1360,7 @@ export function createChatGptWebAdapter(
                   }
                   if (requests.length > 0) {
                     const revision = externalProgress.recordToolBatch(requests.length);
+                    session.runtime.trace.recordProgress();
                     if (!session.runtime.manualControl) {
                       // The browser outcome is in the same race below and owns the semantic DOM and
                       // renderer deadlines. A second fixed timer here can retire an accepted turn
