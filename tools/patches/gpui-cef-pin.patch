@@ -1,0 +1,35 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index abc6055..5cc28c8 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -14,8 +14,8 @@ repository = "https://github.com/bokuweb/gpui-cef"
+ # full Xcode.app install.
+ # From Zed's repository, the way gpui-component takes it: an application's
+ # lockfile decides the revision, so this crate and the app link one gpui.
+-gpui = { git = "https://github.com/zed-industries/zed" }
+-gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["font-kit"] }
++gpui = { git = "https://github.com/zed-industries/zed", rev = "ef075910c99ce2c8fd07da4174e7c3bb71513f35" }
++gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "ef075910c99ce2c8fd07da4174e7c3bb71513f35", features = ["font-kit"] }
+ cef = "151"
+ log = "0.4"
+ parking_lot = "0.12"
+diff --git a/crates/gpui-cef/src/platform/cef/mod.rs b/crates/gpui-cef/src/platform/cef/mod.rs
+index aa45e00..c4f1fc4 100644
+--- a/crates/gpui-cef/src/platform/cef/mod.rs
++++ b/crates/gpui-cef/src/platform/cef/mod.rs
+@@ -400,6 +400,15 @@ impl Webview {
+         }
+     }
+ 
++    /// Browser zoom without reading or changing page DOM.
++    pub fn set_zoom_factor(&self, factor: f64) {
++        if factor.is_finite() && (0.5..=2.0).contains(&factor) {
++            if let Some(host) = self.host() {
++                host.set_zoom_level(factor.ln() / 1.2_f64.ln());
++            }
++        }
++    }
++
+     fn host(&self) -> Option<BrowserHost> {
+         self.browser.as_ref().and_then(|b| b.host())
+     }

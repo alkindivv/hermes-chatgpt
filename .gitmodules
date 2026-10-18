@@ -1,0 +1,6 @@
+[submodule "vendor/upstream"]
+	path = vendor/upstream
+	url = https://github.com/miuuyy/codex-chatgpt-web.git
+[submodule "vendor/gpui-cef"]
+	path = vendor/gpui-cef
+	url = https://github.com/bokuweb/gpui-cef.git

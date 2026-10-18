@@ -1,0 +1,202 @@
+[
+  {
+    "slug": "chatgpt-web/zero-risk",
+    "displayName": "ChatGPT Web — Zero Risk",
+    "description": "Zero Risk keeps model selection and prompt submission under your control while preserving the native Codex harness.",
+    "interactionMode": "manual",
+    "backendModel": "chatgpt-web-zero-risk",
+    "codexEffort": "low",
+    "adapterEffort": "low",
+    "requiresPro": false
+  },
+  {
+    "slug": "chatgpt-web/zero-risk-pro",
+    "displayName": "ChatGPT Web — Zero Risk Pro",
+    "description": "Explicit Pro-sized Zero Risk context; select ChatGPT Pro manually for every turn.",
+    "interactionMode": "manual",
+    "backendModel": "chatgpt-web-zero-risk-pro",
+    "codexEffort": "low",
+    "adapterEffort": "low",
+    "requiresPro": true
+  },
+  {
+    "slug": "chatgpt-web/luna",
+    "displayName": "ChatGPT Web — Luna",
+    "description": "ChatGPT Web Luna for accounts without the Sol model selector.",
+    "interactionMode": "automatic",
+    "backendModel": "gpt-5.6-luna",
+    "codexEffort": "low",
+    "adapterEffort": "low",
+    "requiresPro": false,
+    "legacy": true
+  },
+  {
+    "slug": "chatgpt-web/think",
+    "displayName": "ChatGPT Web — Think",
+    "description": "ChatGPT Web Think for Luna-only accounts.",
+    "interactionMode": "automatic",
+    "backendModel": "gpt-5.6-luna",
+    "codexEffort": "low",
+    "adapterEffort": "medium",
+    "requiresPro": false,
+    "legacy": true
+  },
+  {
+    "slug": "chatgpt-web/gpt-5.6-luna",
+    "displayName": "Luna (Web)",
+    "description": "ChatGPT Luna. Light selects the ordinary mode; Medium enables Think.",
+    "interactionMode": "automatic",
+    "backendModel": "gpt-5.6-luna",
+    "codexEffort": "low",
+    "adapterEffort": "low",
+    "supportedCodexEfforts": [
+      "low",
+      "medium"
+    ],
+    "requiresPro": false
+  },
+  {
+    "slug": "chatgpt-web/light",
+    "displayName": "ChatGPT Web — Instant",
+    "description": "ChatGPT Web Instant through the native Codex harness.",
+    "interactionMode": "automatic",
+    "backendModel": "gpt-5.6-sol",
+    "codexEffort": "low",
+    "adapterEffort": "low",
+    "requiresPro": false,
+    "legacy": true
+  },
+  {
+    "slug": "chatgpt-web/medium",
+    "displayName": "ChatGPT Web — Medium",
+    "description": "ChatGPT Web Medium through the native Codex harness.",
+    "interactionMode": "automatic",
+    "backendModel": "gpt-5.6-sol",
+    "codexEffort": "medium",
+    "adapterEffort": "medium",
+    "requiresPro": false,
+    "legacy": true
+  },
+  {
+    "slug": "chatgpt-web/high",
+    "displayName": "ChatGPT Web — High",
+    "description": "ChatGPT Web High through the native Codex harness.",
+    "interactionMode": "automatic",
+    "backendModel": "gpt-5.6-sol",
+    "codexEffort": "high",
+    "adapterEffort": "high",
+    "requiresPro": false,
+    "legacy": true
+  },
+  {
+    "slug": "chatgpt-web/extra-high",
+    "displayName": "ChatGPT Web — Extra High",
+    "description": "Account-gated ChatGPT Web Extra High through the native Codex harness.",
+    "interactionMode": "automatic",
+    "backendModel": "gpt-5.6-sol",
+    "codexEffort": "xhigh",
+    "adapterEffort": "xhigh",
+    "requiresPro": false,
+    "requiresExtraHigh": true,
+    "legacy": true
+  },
+  {
+    "slug": "chatgpt-web/pro",
+    "displayName": "ChatGPT Web — Pro",
+    "description": "Account-gated ChatGPT Pro through the native Codex harness.",
+    "interactionMode": "automatic",
+    "backendModel": "gpt-5.6-sol",
+    "codexEffort": "ultra",
+    "adapterEffort": "max",
+    "requiresPro": true,
+    "legacy": true
+  },
+  {
+    "slug": "chatgpt-web/gpt-6-sol-instant",
+    "displayName": "GPT-6 Sol Instant (Web)",
+    "description": "GPT-6 Sol Instant through ChatGPT. Uses standard context even when Bigger Context is enabled.",
+    "interactionMode": "automatic",
+    "backendModel": "gpt-5.6-sol",
+    "modelFamily": "6",
+    "codexEffort": "low",
+    "adapterEffort": "low",
+    "supportedCodexEfforts": [
+      "low"
+    ],
+    "requiresPro": false
+  },
+  {
+    "slug": "chatgpt-web/gpt-6-sol",
+    "displayName": "GPT-6 Sol (Web)",
+    "description": "GPT-6 Sol with Medium, High, or account-supported Extra High. Experimental Bigger Context is available on Plus and Pro, with a context window sized for the account.",
+    "interactionMode": "automatic",
+    "backendModel": "gpt-5.6-sol",
+    "modelFamily": "6",
+    "codexEffort": "high",
+    "adapterEffort": "high",
+    "supportedCodexEfforts": [
+      "medium",
+      "high",
+      "xhigh"
+    ],
+    "requiresPro": false
+  },
+  {
+    "slug": "chatgpt-web/gpt-5.6-sol-instant",
+    "displayName": "GPT-5.6 Sol Instant (Web)",
+    "description": "GPT-5.6 Sol Instant through ChatGPT, with its own context and compaction budget.",
+    "interactionMode": "automatic",
+    "backendModel": "gpt-5.6-sol",
+    "modelFamily": "5.6",
+    "codexEffort": "low",
+    "adapterEffort": "low",
+    "supportedCodexEfforts": [
+      "low"
+    ],
+    "requiresPro": false
+  },
+  {
+    "slug": "chatgpt-web/gpt-5.6-sol",
+    "displayName": "GPT-5.6 Sol (Web)",
+    "description": "GPT-5.6 Sol through ChatGPT with Medium, High, or account-supported Extra High reasoning.",
+    "interactionMode": "automatic",
+    "backendModel": "gpt-5.6-sol",
+    "modelFamily": "5.6",
+    "codexEffort": "high",
+    "adapterEffort": "high",
+    "supportedCodexEfforts": [
+      "medium",
+      "high",
+      "xhigh"
+    ],
+    "requiresPro": false
+  },
+  {
+    "slug": "chatgpt-web/gpt-5.6-pro",
+    "displayName": "GPT-5.6 Pro (Web)",
+    "description": "GPT-5.6 Pro through ChatGPT. The fixed Max effort selects Pro.",
+    "interactionMode": "automatic",
+    "backendModel": "gpt-5.6-sol",
+    "modelFamily": "5.6",
+    "codexEffort": "max",
+    "adapterEffort": "max",
+    "supportedCodexEfforts": [
+      "max"
+    ],
+    "requiresPro": true
+  },
+  {
+    "slug": "chatgpt-web/gpt-6-pro",
+    "displayName": "GPT-6 Pro (Web)",
+    "description": "GPT-6 Pro through ChatGPT. The fixed Max effort selects Pro.",
+    "interactionMode": "automatic",
+    "backendModel": "gpt-5.6-sol",
+    "modelFamily": "6",
+    "codexEffort": "max",
+    "adapterEffort": "max",
+    "supportedCodexEfforts": [
+      "max"
+    ],
+    "requiresPro": true
+  }
+]

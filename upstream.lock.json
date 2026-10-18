@@ -1,0 +1,580 @@
+{
+  "version": 1,
+  "tag": "v6.1.10",
+  "sourceSha": "8645a89e6a5fbe011e1bfbb0821a386ca7477ad5",
+  "files": {
+    ".github/ISSUE_TEMPLATE/bug-report.yml": "bb9b8e87c3d45196a41e0d2067345cca43eeb6b40bef286ed4608d64f52ef3b1",
+    ".github/ISSUE_TEMPLATE/config.yml": "758c7ec1cf7568ab4c7ceb43d3fce1c7bebc45adc73149dc068e615eac50bd66",
+    ".github/PULL_REQUEST_TEMPLATE.md": "75acbd544945a337f00b83a255b621583b9b16635f07e21a83712c7977fd96a7",
+    ".github/actionlint.yaml": "b9b945e14c1c530e18579d4feb10548bbdc4ae3710d097dbb6682378b8bffd81",
+    ".github/workflows/ci.yml": "d1928e9a8aeeee11ac679bba42a0c764f38d1edf5f4eedff566bee6d0a532e97",
+    ".github/workflows/release.yml": "2ea3914e3e4a29143effd4b70ff07d8dd64cb496f04478a7fd55190db7824129",
+    ".gitignore": "3ee5072d71187d971f7b61add029d6a085ab0123c632f6f56c6a9685fffa4cd8",
+    "CONTRIBUTING.md": "81ac3454b92bdeb114b97ef9ddfa78176e4ea2692c8ca9629f062da145946589",
+    "LICENSE": "d8b06e8d802722749b8f09e4ed1f2439fde0995a09b7e47c65dca3cc54d43d6e",
+    "LICENSES/Bun-1.4.0.md": "2cb858b2db8fc793bca2093489c5bc8eee615d002cc4924254904044c27a0afa",
+    "LICENSES/libnotify-0.8.7-LGPL-2.1.md": "fb293dcf753752a80c7bec86cd406b53c55b086c1f1bbf71425ce437ea3f1e4c",
+    "LICENSES/tiktoken-MIT.txt": "418cb499b436128d653d79941333a5437b7be2ea9213dcc2f04d15d5d2c51d86",
+    "README.ja.md": "b0f2fa1229f0be931601c283a246bcd1153508c81d05fc9ea1aae899e41964b3",
+    "README.ko.md": "28499ec4d285e1d7399b468eb734583ebb813034465517b0683f68e769d33419",
+    "README.md": "22406944afeae00f16a9efabe0d6d1077345b7f2f8a202cf504addf9825744c4",
+    "README.zh-CN.md": "c01ca53ce74bd1a1ac8d3118216c422098e245d573c8a1426fb1100ec3a2c9b9",
+    "SECURITY.md": "0dec44022ac0ed56e6a9bee583c57ade9258ace0290c25157b82f9d30e5190cd",
+    "TROUBLESHOOTING.md": "1bb486c4dafe81be2d3d7c8718934009e02965a6dc0c83ff5d09d3852eefc738",
+    "assets/demo.gif": "3b8cda5caaac1e971b52e32ec69ea8d8e56e3bf1cba40a08c9a273eff2256012",
+    "assets/readme/download-linux.svg": "bc91060f1b68a5d11c566b18d6fe8109c19550f142525a5137fb1b6ea92082bf",
+    "assets/readme/download-macos.svg": "c94d05e0a20d9a8eac2d81890151814aab0dd5ec98e5025b67c32a4c94c1cf4e",
+    "assets/readme/download-windows.svg": "0ddaff62b59cc700d8061a4d3f3c029e100f6246a7ffbb8a1020868f4cba0cd2",
+    "assets/readme/hero.svg": "919c7f98bb45278db154b0444cce1d90e924c6348e2f426aedf9502e17357325",
+    "assets/readme/persona-voice.svg": "f63f81aa04dd0e373055b7d9abf1caec2b73e56e8137afcaaa9ad6526ed709fd",
+    "bun.lock": "298a89f9a9f050fbb7c4c839cc56966c1cb214c0369bc98221c6a262c6adb6a0",
+    "docs/architecture.md": "57711177efa480f7fe6cb14278b71afb427569a57760a82dbdf47df9dc1f9d17",
+    "docs/dev-chat.md": "0aa3a0e6710b93deda9c3996f91176797fc0eaffc26c8ddb5672589371902b62",
+    "docs/release-validation.md": "627db5ffb9d1e1179e4b102f51061782db5bf547f51165a3fed84b4417928b59",
+    "docs/security-model.md": "da5471d5a622a02a12ecbabadcf08bdeb5e68a878843ce3e4544fef8d65356a6",
+    "launcher/assets/icon.ico": "cf85d470b4a24071d78b6f9765cd428eb8cab1db05ad7cf54893bc0b11796f4c",
+    "launcher/assets/icon.png": "f251b2f98e35ecdba402028bc36ac2bf89c091a4f83f46ba2000a847bd855da5",
+    "launcher/assets/linux-appimage-runner.sh": "ff370085dcbc714c03299a4a06aec011299598326bf37ed3c6c4b9bf5572c391",
+    "launcher/assets/mcp-mark.svg": "75b007e05880de1648832e86695d7b02b5e92746fa9a3c51f622cbba56137afb",
+    "launcher/assets/trayTemplate.png": "8fba1c2cc3fd89823c1cf7d754496a9a5fc26b62ee18cc9c3506d8e5a521e63b",
+    "launcher/assets/trayTemplate@2x.png": "8c7b6037994531236ec966468ca17eefe6fc5dad9d6478a9ce76ea875a992411",
+    "launcher/bun.lock": "e8dd0ac84bf8ee51f134dbf6ec301d9f2928df10f0b463545fa4e990e15a9882",
+    "launcher/electron/atomic-file.cjs": "274a849d3004a2c22c8507b13e671d0e81fc2532ba7d90a0493bc375f59e3ef8",
+    "launcher/electron/autostart.cjs": "fbd1e62683342c265f4907e781aff8805d76515b6777792575b14df267b635e8",
+    "launcher/electron/browser-announcements.cjs": "a95b5e2807e51745e16696bb45da6f50f070623ebc4efeaac61c91b5ce3568f7",
+    "launcher/electron/browser-helper-verifier.cjs": "ff508b5773cc0f093f2d7a3a8f37fdab39d1af52b3f24a2a1c583dcbd1997a0c",
+    "launcher/electron/browser-host.cjs": "646ea13a954bd3f5d2470c642a2ce7f976e61efdc1264277f239c943e3323c7a",
+    "launcher/electron/browser-page-script.cjs": "c458eb9f64df0f2028f155134f4651c3892f86920217e5a80662420316395b28",
+    "launcher/electron/browser-state.cjs": "da76e18553ad552a2e9ca9aef2578d9de110ddcec2916116c37ce7d7506341a6",
+    "launcher/electron/chatgpt-auth-session.cjs": "6c99cfd3d843441bb5ecd67a84b1fbe2e023eddc78603536e97221bf759b41c8",
+    "launcher/electron/connector-identity.cjs": "ee33533d706e5e75099fe5b4ff3b9a4b83b950c7fc6b3f47d4931d57d0cd8b33",
+    "launcher/electron/control-server.cjs": "7e242575f3f8551e17a2c09d3b4ecb576d740791fd4eef58b3cfb90d30ed099e",
+    "launcher/electron/languages.json": "491a0037b77b753f572a7f2a86ce41661a6a74cd7c665a93935d433c29d0746d",
+    "launcher/electron/limits-controller.cjs": "8f7b8f2fbe73e76647ca2e4c3e1199caad07975321555c002ca23f52107783b4",
+    "launcher/electron/limits-policy.json": "02da3d94839b7230bc74a97923b81799b7b1acd4487ef605ce261f9a16cb2611",
+    "launcher/electron/limits-store.cjs": "1d7e7b97593eda719094df23d8fc7b2cfb4f2952f40e3a11ea42b7325f217654",
+    "launcher/electron/logging.cjs": "2544371bada8fc8724ebc6463eaec95d9a8328ed25c34ce98088e64851415c0c",
+    "launcher/electron/main.cjs": "01e03bdda7e5c89c40e1de0f263e6cfdfaff822fb102d4aeb1f45cdc5653c4fd",
+    "launcher/electron/passkey-login-state.cjs": "02e4ccd40aca8d832398f2a4fb9e0e6f5ddc240583c0768d09373276e1b7e95d",
+    "launcher/electron/preload.cjs": "153110abc9b3e90d9c255a950b69d7af209690c135cfbbf22b25f9d678478580",
+    "launcher/electron/process-tree.cjs": "750c0e7e89aa562c8ac6b28eba5649f0f5140a7e88262551dbc62d0176372aa1",
+    "launcher/electron/profile.cjs": "a3a5358d4ce228820e52cc579e359d1f3cfdc29f8a1a726e95f9e20377b314d6",
+    "launcher/electron/retained-turn-release.cjs": "6d161d413140962de07ccebde7f7719a4a115141d911f9529d7e608c3058dfca",
+    "launcher/electron/runtime-command.cjs": "b08d4ccd30460471599df5873af5d9a3123bb58e725f42389b691321d73652b2",
+    "launcher/electron/runtime-install.cjs": "fc1fd29967d84fb7c3c12e73589a091e4f247b52674441dad3058e1a230ab837",
+    "launcher/electron/runtime-supervisor.cjs": "0e47d26760adf331e5622dc4bf39c9e6e26263be2deb47b2e0082beb8b7f1d33",
+    "launcher/electron/runtime.cjs": "fda5b2b40ddbebbfa6c92b686f2a3efd03a13add9f1a6001da76ceb66bbcf2fd",
+    "launcher/electron/state.cjs": "0d443b073e34b831d774a8dcdc1c57de4d97595951af3268eb3f3b0c3fd1884e",
+    "launcher/electron/tunnel-proxy.cjs": "445d9a8a7a9c2c7533720dce363c8d76e8b0a8b0f079a63cb8f0edc8b98b1968",
+    "launcher/electron/turn-suspension.cjs": "6364570ab9de2d94afda14d18bca7d900b5467cf99cd1250fceeef522c326523",
+    "launcher/electron/update-worker.cjs": "faa240cace42a6bac39217b4cc62f15a820b2e201805153232fd678b741b08f9",
+    "launcher/electron/update.cjs": "2fc0a412aed9967ac46e973368d69cc237b3e9e7f4501f8cbb18f9977ec7f48a",
+    "launcher/electron/window-state.cjs": "0100a4478ecd2d740abe892aa40168d9aa9d5a13f8a913daff414199f0d8458e",
+    "launcher/electron/windows-trust.cjs": "35563c86cc8485a0b3a436253301d18b575af515f6329f790ba2e88af9292ff1",
+    "launcher/index.html": "39f6b258b74bacaeb0a510f7c444b31faa55c52eb25140d1b8a3380f4ddf7b75",
+    "launcher/package.json": "de159a5cf6d6b8a4f081264e0d28189bc105450b4d290ddfe475ee57df368666",
+    "launcher/scripts/dev.cjs": "45f52a0321e1de7361f9218ff01a3d8a5946b9cb50f6344d9541c5cf7d74118f",
+    "launcher/scripts/package.cjs": "c283c7bb055819f4115ada17b244f532579175d186467918633c56ed0bf49475",
+    "launcher/scripts/prepare-linux-appimage-tools.cjs": "f636933459526b51cc4f108280566e4866ddc9c7b1a5b16c54dad807e2c2959b",
+    "launcher/scripts/prepare-runtime.cjs": "a5c9e71e4e42ba8dd6418feb498f462945ef8ff7d6d8ed203231c5ee13290e22",
+    "launcher/scripts/smoke-linux-appimage-symbols.sh": "99bdb59fc1e6b6410806e67354c64a91f14d7b075e077b338c6ac1fcb3f9e97a",
+    "launcher/scripts/smoke-package.cjs": "3a5bac63d0e8c81ca97a9e4dc1fe880146cec00f4b108b169ba0475d39d854c8",
+    "launcher/src/App.tsx": "0dc3c3186269b5756e4f610a13ab8d938ad6eaf5e7de458efcf14326d04995cc",
+    "launcher/src/LimitsSurface.tsx": "e5572e9b340e527680d9377af1f8e605a3ac2e02a48e1147c4dad6103ae08fab",
+    "launcher/src/assets/mcp-connect-connector.gif": "125ed1e66b77c088dc44f52f0e728833dcbcf6396d1dac0b745a6876f52c6b30",
+    "launcher/src/assets/mcp-connect-connector.mp4": "2cebfe72ea9f29cfd57a2e8c69153dc57c8716e2c9b952be604348658645c3f2",
+    "launcher/src/assets/mcp-create-tunnel.gif": "e9461ca6191a959f749cf0ec2eb4a646f051af08e5dd06caa6e26d888dee7390",
+    "launcher/src/assets/mcp-create-tunnel.mp4": "c342b71d2ca533c28a23913119db87ba9c0576885017c86dd57cb3ef7df07f3a",
+    "launcher/src/i18n.ts": "5458a92c69eafb9c17ea2677308ded5fa0ea583d77be3e18c9e97c6645d47edd",
+    "launcher/src/icons.tsx": "798f0134030bf5b24692c4da1f6aad94a7349011db50db1be9c560507568311a",
+    "launcher/src/limits-copy.ts": "4c7807544beabb928c9eb02001347fb6d81ff01f8b3e1da393d2da21cf7dacba",
+    "launcher/src/limits-types.ts": "868e627180bb40a3504ac5a5737d966c9f17873d935685d9a102fcebaf683922",
+    "launcher/src/limits.css": "fe6a6495b5190b27b2dc172d323a678f0e97d5f4a17d699eacb2857a95252459",
+    "launcher/src/main.tsx": "13a70b435b226a5356e623b0d2980a1582cb426b310e084245dbf29b1be080f5",
+    "launcher/src/styles.css": "f19830cf4c065a5559a37483cedcc30cc0d5d2d12fc29e9b75f2251c4a2ef5eb",
+    "launcher/src/tokens.css": "9e2524cdade2b0394c244eafd7c533f19e3b7d76e979a4d72d138280e3815edd",
+    "launcher/src/turn-activity.ts": "0b46fa9cb6b1462d3ad4bca0c1b06b79cd53e63a767115cfc1de19204a02775e",
+    "launcher/src/types.ts": "f36094ad74dbbb7215ec165b6a554ef131ac2c82bda8aa8b20cd037c9ed89e1a",
+    "launcher/src/useLimits.ts": "a3699bb02222e6384c343f123789d13686d05047ac6a3434b14d241b232faa20",
+    "launcher/tests/atomic-file.test.cjs": "30415b7e984537ef1b9ff90cb4dce5cfc5ff749964e3176a8507ebe8af8e92f6",
+    "launcher/tests/browser-announcements.test.cjs": "23ad00255f8cfcdb77f2447645ce8fd12172215152f21a1efe61ffce064cc648",
+    "launcher/tests/browser-helper-verifier.test.cjs": "f31f8a165962e7edd9b642b45fb4656b628bddeeddd75a2cb31d6e61715887fe",
+    "launcher/tests/browser-host.test.cjs": "63633cfc9ef3a9144a6b3d998e2b4fd4ac6085d495ed105d7505543c758c60d5",
+    "launcher/tests/browser-page-script.test.cjs": "32b3caf824251d1ebdaf6984b66cf7fdae5d763119a7ca9820f72e8743f642df",
+    "launcher/tests/control-server.test.cjs": "c6d013d34f0015d5575da8d4917c2b3a5cb8a4b8440697fe7d5c60e8eca7655d",
+    "launcher/tests/fixtures/chatgpt-link-regexp.json": "a35daec957edb2eeeac34d2c3f17c9c779cee5eb221824d08e7dbec2913df404",
+    "launcher/tests/fixtures/composer-controls.cjs": "1db238bb405e382e5482ec2ab26a9c4647e661fac00c3273e7e3dd501c4b7cd9",
+    "launcher/tests/fixtures/context-markdown-regexp.cjs": "db8cc385db05a16c70101acd61c026cb6c4a2c46570bff28813f77b4e2a76270",
+    "launcher/tests/fixtures/navigation-viewport.cjs": "383f0cb26e4dd018e816f94b76c4b00e3247a51208d7414185b6aa7764948133",
+    "launcher/tests/fixtures/viewport.cjs": "715ce1f927dda2e51c287d04a0261bdbc43f2b89a59cb4c8032d52579c54b23f",
+    "launcher/tests/limits-controller.test.cjs": "07f6a14b881ef12741ec4ad8ac75cce8f39d99dbafae90f0b81a33842ac371f7",
+    "launcher/tests/limits-store.test.cjs": "01fdd720ded32f92af46007fc55224602811932db6c9a0863e420539099b1395",
+    "launcher/tests/localization.test.cjs": "fa6741a7fe60fc08d3d635acbd39da0cd76dcaaa0639f6b317027ed11b146aba",
+    "launcher/tests/logging.test.cjs": "c362b8b1192da0090bdf85d0ef1faa23c5d7465067bbf4f437460da41b38cd6a",
+    "launcher/tests/packaging-contract.test.cjs": "3e48d25855530f3d865eb0db5c02d77109144bf098be895def555ef5316d8ad5",
+    "launcher/tests/passkey-login-state.test.cjs": "67d29c501feed66beeb344fd007cf8859cbe42bb7a824bf66bd6c83aaf12aa42",
+    "launcher/tests/profile.test.cjs": "67462a2f09180cc482412135994553f5ebaa1f0d7b20bad8e1b80891e55c3f3b",
+    "launcher/tests/renderer-wiring.test.cjs": "4ad6bf4f8bb6cacc64413aeea2c5c4e1f92703a5a17984a7ad78b466967a10d7",
+    "launcher/tests/runtime-host.test.cjs": "7faf86c309689840ceb0ecae50c2d3035512c56696f26b5db5cfb07926feb4bb",
+    "launcher/tests/runtime-install.test.cjs": "4737a62e50bba84c3afd594f5d0fc8d6f1607bf94bdb55ffea3511582f52d074",
+    "launcher/tests/runtime-supervisor.test.cjs": "f4ebfb667a7fc5561acfac50b19b076123719fb440e8bd701d9a30b3c8f3db30",
+    "launcher/tests/state.test.cjs": "ebea9ecbe2c66c649dc34ded7ec2450eda0cf97c8855ca3a251be5377a2ec76a",
+    "launcher/tests/tunnel-proxy.test.cjs": "3b17cd3fe82fe5aef37b538da8e8058d6d33db8f588d56d26734c484a06cca23",
+    "launcher/tests/turn-suspension.test.cjs": "e2951839781cf738daecc5620023d105a43c6b769e2f9c5af932150f7b4789b2",
+    "launcher/tests/update.test.cjs": "a5d81b8cd33ee11740da307834d9ebe41209250fb1425ee713f7dbb3ea4bba6b",
+    "launcher/tests/window-state.test.cjs": "bd6e13a863ae89395620c93ab0e8f8e0291aecc189a2f60433a62dad0d7a4138",
+    "launcher/tests/windows-installer.test.cjs": "ea018b8b2d6b32cb5a443200e0043391cf6030c198ce529c59f5cbb6156551f2",
+    "launcher/tests/windows-installer.test.ps1": "c3f0c186f30f57819b1ef35cfb7dc75fa154becc14942914596b687c3467aaed",
+    "launcher/tests/windows-trust.test.cjs": "a15c1de5593d035cfaf4939497fbf062c6b6a2f77733ed47b6c36ded70e2b110",
+    "launcher/tsconfig.json": "20a936e14228ab8ea4d2899ae3004096da5d2fd8ffd1f74368d826d53b04fed0",
+    "launcher/vite.config.ts": "ef56e64d250eafc59e1a8b06e5e0f640da1adabfa0f1654d63fd6e999cfdb075",
+    "package.json": "955d3bde550b8226cb0ee827d9749d04ac1bd224d35e45fee87f06449d5d00ac",
+    "scripts/build-browser-helper.ts": "089669c9655532d180d9b9e696d3a45dfe96001dfed8fcf70cc94f4209809eb6",
+    "scripts/build-runtime-bundle.ts": "7729913e69919b199d3c41fbfb6c2eacfa0cccb4c094c3e69e397bab5f1758ac",
+    "scripts/check-version.ts": "559c537b800119f2874d407cb7b72044daccf5ebafbe3d1e3b31c07d5c84aa4e",
+    "scripts/clean.ts": "100066a30f25c5cf6904c3d3f1f2e0e3a81e4d40182d648533fa0170a93cb2f6",
+    "scripts/generate-third-party-notices.ts": "b916a603f27ec73ca503d6ba1cdf54f0d0282ae3bcb34702456fa9af672787cb",
+    "scripts/install-launcher.ps1": "f319b61fdaffc6a937a06e1fc894790716918a7fcaead9a3009ed50fa9a0ac8b",
+    "scripts/install-launcher.sh": "7a92e1aec6365315e6d0d7aaebc22a4c41426bed865bf918acc7089665fd0abb",
+    "scripts/install.sh": "4fa8aba038f19a0adad70293ec86fa4251613748756139bc5cda6b22331ebd88",
+    "scripts/prepare-linux-libnotify.sh": "a26f3ca0ac7cc89628f2d4a47a6e70ac30a7c9a0d35a3c64cf547e00fdcb023f",
+    "scripts/prepare-windows-baseline-bun.ps1": "ffd1a068ef244074335dfbf3b4d29c54fea1bb76b5cbd80fe00e769f2069bbb2",
+    "scripts/smoke-codex-cancel.ts": "5c0d49731216fda9c6eb05a9ab64402cd8f27b43567ab3dca2547995a5783790",
+    "scripts/smoke-codex-catalog.ts": "bba77890c224868daa0180228b621e1281ea0db12ab994c4a8915b24d038af82",
+    "scripts/smoke-codex-environment.ts": "21938a7b4a03b3236199d233d157e77eb635468dc1c72f0359dd3bca1ec03986",
+    "scripts/smoke-codex-interrupt.ts": "aaec74a30bb9c2253fd4b2552f93fe7a4625c7c95e18da7d9f7f593250f11a61",
+    "scripts/smoke-codex-subagents.ts": "05006e5b4961a7e238e71987fdf5be992c241dd4a86047bbfcdb73c03e9f8e74",
+    "scripts/smoke-codex-web-subagents.ts": "e8a2180f536e1086361448abe828a8448c70d0e780eed60f5ed6ff3c32d7c225",
+    "scripts/smoke-release.ts": "16c7a10c3fe611b8119904e9eafa2d5a6f32a53b360d6860832c742f9e89b5e3",
+    "scripts/start-launcher.ts": "6c08c2ee404640f3894a11a780a68933b5d38b18a1c7906f6ee28a7e0487d5d3",
+    "scripts/verify.ts": "dc183141d1e488cff4827f86c2e599d9e083db5704e85f1de62951aa555181ba",
+    "skills/pro-researcher/SKILL.md": "a6243029f80955ff16ed293fb1cc576ec81fa6603882f0b962864fe78d436f37",
+    "skills/pro-researcher/agents/openai.yaml": "811077a9c0142447247b6d09fd1a8021833b2d9b3b4676825336307c9b13bed7",
+    "src/adapters/base.ts": "8441cdd6621d8fcd700383a07c01a234029b3adea854fc6f79119bdcc58ea4f2",
+    "src/adapters/chatgpt-web/adapter-error.ts": "ac704fef6ee4a0acf2b23f3e3a8086aa5e4c72538f595ee2f303477d5605bf76",
+    "src/adapters/chatgpt-web/attachment-upload.ts": "516d8825e2180c14a1d2665973709ba71549c42357765db9263c713fedfcf5fd",
+    "src/adapters/chatgpt-web/browser-diagnostic-history.ts": "0b3e873082c7e8d6e79f6296d00fc2edd8509b6888e38a43734e4cfa6fa286fd",
+    "src/adapters/chatgpt-web/browser-helper-main.ts": "b637d056f16e673433bc408b65709eb603d145e525c0de808576668b88741dbc",
+    "src/adapters/chatgpt-web/browser-helper-prompt-selection.ts": "72e0293b5aad62d99525e3e8552f5ddc1b702dab8520837a2128ea5e4dc6a96f",
+    "src/adapters/chatgpt-web/browser-response-structure.ts": "b23b0e37284b234c1e33149a45a5a9d5bad91fd035a19cdf6719dd045e012abc",
+    "src/adapters/chatgpt-web/browser-user-message.ts": "8b9f2ec47b25d4003016d61b7d28ce8b152f21f445e30018b3b3f9647afcc493",
+    "src/adapters/chatgpt-web/browser-worker.ts": "bba0e06f657bea8d2ee9035dee1f012e6e6fe76d515fffdadcf66d01ecc2bf30",
+    "src/adapters/chatgpt-web/codex-rollout-environment.ts": "efd5a06fcca2853b755c672216cadaa9b1cec79452ac88ef9f7edee40bb141a0",
+    "src/adapters/chatgpt-web/compaction-continuation.ts": "6ec8730833da88e81e76bd1a52663259aa0b7e5b2071eddf9c567d2cfc29dc90",
+    "src/adapters/chatgpt-web/compaction-handoff.ts": "19af787e8731a9da5804e1a190461b4d4925f50c8518f023885777cc624a5fd5",
+    "src/adapters/chatgpt-web/compaction-transaction.ts": "f391d1fc43aee6a9dba17ceb10ac52f081481f9b5ae5d87f692085f3a48db77a",
+    "src/adapters/chatgpt-web/concurrency.ts": "11b393a9a63d11f059ee8941a363640fa4266830e1227c5ef8e9800e08d01782",
+    "src/adapters/chatgpt-web/conversation-key.ts": "536c5de53852e4073ad7ddffc31b3cbf28bbfd292967154495a8812d8b978ca0",
+    "src/adapters/chatgpt-web/environment.ts": "a8b417358fccdb1b87a0e8086f3e2316aa0bd2d182480ae1da3071180e3f7116",
+    "src/adapters/chatgpt-web/index.ts": "fc75efd05e636412a1359dba7387f365d54e49493572a794ddd23a3dbed01b48",
+    "src/adapters/chatgpt-web/input-tokens.ts": "0861aa2d56a1bbb992b6ba59c2bf40695a8a20f9d5abb8ef3bfa730f2c3a97b6",
+    "src/adapters/chatgpt-web/launcher-helper-client.ts": "3b72112d8fee3cc52b8a9b05beaf432d083286765b10dd3e3f32e96312a2d136",
+    "src/adapters/chatgpt-web/limits.ts": "2cd7ff471250f13db8cb5f357d262675f6a26597e2284caca1df46863070810a",
+    "src/adapters/chatgpt-web/markdown.ts": "1e35f042fac0d2bf677f1a4f7b8e05f656d037e528db31c4d9c12ed84d8eebeb",
+    "src/adapters/chatgpt-web/mcp-main.ts": "1d648681cf0d2481236c1ec5b2bc90836474725bdc34252b06a2f47f440fe317",
+    "src/adapters/chatgpt-web/mcp-observation.ts": "9f50b6512bdea241605628b917e72719593531e0b782a7d99e0c9be1b598d377",
+    "src/adapters/chatgpt-web/mcp-server.ts": "d2c1c077e7032e808690ad3b6efc94941bd674e7c294cc7130fd802595ac195d",
+    "src/adapters/chatgpt-web/model-selection.ts": "ba7a09080da2839392a9b59afe8c89f4fb9e32d3b159c93c94f2e49baead5eb0",
+    "src/adapters/chatgpt-web/model.ts": "95330db2ec89c0c58fb59050f1946b7326efa5d37f6c8225fc6fd6d8e7cc1611",
+    "src/adapters/chatgpt-web/native-compaction-control.ts": "3cdbf2502c105f3c036fa4e927446fc108a0632be6592e619f499d1813b178c9",
+    "src/adapters/chatgpt-web/output-validation.ts": "f8e7e2c1fde027d0388a8a83241884c93729a41f2c3932b5d92e630a77db29fc",
+    "src/adapters/chatgpt-web/process-line-writer.ts": "727b115fc87663fdf476ec5af6fbb4763093d14da706780b9067dc180c0af91d",
+    "src/adapters/chatgpt-web/prompt.ts": "8b058e90d9c6209ea2a24623a9460c8b6ebf0dab91e998e0689700822de6fbab",
+    "src/adapters/chatgpt-web/retry-policy.ts": "70c49df9b0baa80e997fd3c25c8efe50062f54e2cf49c863654df15a89a188e9",
+    "src/adapters/chatgpt-web/rolling-checkpoint.ts": "6e8e624f555cd42f1a5e32ab222b8494d1bdccf5f6e503e9557548845f283365",
+    "src/adapters/chatgpt-web/skill-attachments.ts": "eec8b77fb38954240375e862e7ed5a17d84426cc0f971c70c800061e302ff817",
+    "src/adapters/chatgpt-web/thread-environment.ts": "da09814c87c78e8c4116fc0d5dd1d08eaaf54a7554feeb5f13e52aabc06dde49",
+    "src/adapters/chatgpt-web/turn-broker.ts": "588dbdbcc91872536b0aa4e58bb44ef8e6bbb7b550198d57840212c7c700fe5e",
+    "src/adapters/chatgpt-web/turn-execution.ts": "1d5298973e6e22d8a48a06fc1ca249ca5ec906ee739ed67acb9e0542e479eb5f",
+    "src/adapters/chatgpt-web/turn-progress.ts": "906e63e3e9cbb85478a02c7605babc14a166b617b8f97e660109c8f8ece5263e",
+    "src/adapters/chatgpt-web/ui-labels.ts": "3ffe3bba94951f7fe7aa98cb686ed8121f3ef5c0cca09c3bcc4fbb5f51ac3346",
+    "src/adapters/chatgpt-web/usage.ts": "52a2218fccbb01d5295e4521344acebc1349d008a9c7bf1a2685ef0803d7c615",
+    "src/adapters/image.ts": "daabf37ff2147c319020e5675743e0ef1c8757bf29bb451a255f171a6ed471fb",
+    "src/bridge.ts": "720408cb98557ddd430bbdbe28af8f70afbdbf700b60746d839b8a205c6dba1e",
+    "src/browser-login.ts": "4381fcc81cfffcdb71038d0005c166c7363cd8e8aea87baacdbc23870f07d002",
+    "src/chatgpt-session.ts": "3b112af9517504aab44c08a2c9d754a91af875cb63e743f142376611b8a0f06d",
+    "src/chatgpt-web-models.ts": "4779a15aa463aab2fd2eaea542e7f8a18859e224b208de93177a74c153bfd58e",
+    "src/cli.ts": "f8f3a3306daa3e86944c047eb8cbe7b021ea08df28a4f912733cd02a6acc5739",
+    "src/codex-integration-document.ts": "f358623998662de2673f66e8ba6cb88f2b9f8d7c897965a7686fc5495b27792b",
+    "src/codex-integration-journal.ts": "c2398376d99a387f166fe2ba7f318eec5b2224c0fd2aba6a90814c2c84648ab7",
+    "src/codex-integration-route.ts": "0d48f695ef10567732b9b516551d6ae554f10b98f7811aeafbecffc80e986a2a",
+    "src/codex-integration-shared.ts": "a47beb9c179eb2f8bd2e8e566900ce3752e6a8b75adc6e1bbabc37ccc7aebca1",
+    "src/codex-integration.ts": "ae84a4b0312113da0f240d6bfa2cd1af887bc518a9117e90b976f3019f864356",
+    "src/codex-interrupt-hook.ts": "bdb5afaf587d2283df5795d4ae7ad6db08978f8f080a4c1fe74dcc234dc3109c",
+    "src/composer-predictions.ts": "b78952916da49b3c6d084b44cea59ac60e2296e475ef1b52b3b7822ff176a195",
+    "src/config.ts": "13295fb216e5aaf58a4c5e72e4ffeee19f29e6bb1c90fb1a5c0b69ca667eb935",
+    "src/dev-chat/cli.ts": "aba5dcafaebf3db3459e0744eb8f10616bff2fb284d4fff7d247b45036cda975",
+    "src/dev-chat/constants.ts": "9283b1e0cb36794d4b3adb9f08fdaf667a1bc0600b130fc026ec82608ad77389",
+    "src/dev-chat/driver.ts": "cff9e3d4d55be144f8ce44191d6585b8cda47579a08547c1f9e1564fc69d7bdb",
+    "src/dev-chat/profile.ts": "76f098cc6fee783821135eee8393b9098d6d22551d1847188b8ae3ab0d3ccef3",
+    "src/dev-chat/session.ts": "19c2274f0bd7087803016b6e10d748361c104187b435bf1eecb360dcd1394358",
+    "src/dev-chat/transport.ts": "88c9ccb3d05642765e2115087b96f20018011590eb09b40e1e7424e49955f44b",
+    "src/doctor.ts": "3f0bb86679efa3db67864b51a124577bd61c62f0f1b5439c40a32b5c5b0d60cd",
+    "src/domino.d.ts": "6dc26d3df1a4d78854ba16c99a37c52cd64c3205d367c389cfd5d4133deb15ea",
+    "src/event-queue.ts": "21f3be62898aeb317e785e128c2c325b2c6942ab552f82077d0c121c7a73fb88",
+    "src/http-body.ts": "de03e4dd84d4732b9d1c6a7fa448bef6b318b50e3ef3b4a8b826896ae6189400",
+    "src/launcher-browser-host.ts": "aaa65aa69e2dfc1ffb142b13dbb00f68c0cf579e5e97c046975791ac6bb1573e",
+    "src/lib/errors.ts": "1e9ecf1edffbe63d1c190bc060639bd394596253eb3ff809d523e229232d5939",
+    "src/lib/token-estimate.ts": "a00a81c847d0e264b66b0c5f11187a191d8e62d7bf3fff154cb575912799e2f6",
+    "src/model-catalog.ts": "acbe75da80818be647367946884f300cad10e5e8f9dff8a0d3ef9dd2dc50c3f0",
+    "src/native-network.ts": "d6ff1f4d13d67c54e72c92d5d1cb20c2eadcf6688c7d1df48c73c6f27d164b5e",
+    "src/native-passthrough.ts": "9da225f9581e19914ed192ba4ccaf17c6b99f4eafa78aa6d30b426d164b4f22e",
+    "src/process.ts": "788126f540921897b9d978af25b8b4de992ec2b088d1cb908c2ea1b330fc3e6a",
+    "src/responses/compaction.ts": "f4812623ce5a803acc2e837fe87566e3b0a94f3259948146b809a19c18b5dbdf",
+    "src/responses/native-context.ts": "d40f6f1cf59c02e292fdc8ffa3e1409436ed50cef3325ed5bb83866db895fdd6",
+    "src/responses/parser.ts": "14b0fcb065087a1f37ef14e683dc2bb20b8b2e47272576b4921a7663c0598c9f",
+    "src/responses/reasoning-envelope.ts": "5df8453122d8816358a013b6b96d4e53a0d2d3820a741754fc68622feebc3fe8",
+    "src/responses/schema.ts": "8be73a8ebd278e1254fe615327eb85bed636f35d51ad752053f549fb3e2d1653",
+    "src/responses/state.ts": "b432b1d1beb54877a74f28e6ec0f951ed548a3c5fffe5d1ef4c3f02b56102c0b",
+    "src/server.ts": "3955d6521dda8c4c75e8bdbca48ce8e563f68edf469d2a990118a96811fff01e",
+    "src/service.ts": "a9026e84b3fd825ade6c9d69faaf208faef83662b504d12f64ef2dbcff2b0542",
+    "src/setup.ts": "96b1578a24898bb8275e01b5d2a3060b2aca436837b6331574952c34c8ba2023",
+    "src/stall-timeout.ts": "3be4873187e20953627e3d9b59f65a52194756eb947384075b35ab9d0ce6a9f0",
+    "src/tunnel-service.ts": "b8c50e4bdf4943117990bbb7e60f1ed431a5ae1031b70917f98f3507f48428ad",
+    "src/tunnel.ts": "258180fbc37d06ad9ffd856fcc7c49d40437aac6d0e9cc935aefddcff3f96943",
+    "src/turndown-plugin-gfm.d.ts": "ea990b5626ea8873e7b47591225d19b6b4c3816331cd5fc4980118779768bfd5",
+    "src/types.ts": "4826e9ec815b5cef44989d22d63c6ba6bd1a0603eb0bc232c1af69d8a8ae3ccc",
+    "src/usage/totals.ts": "c2f05d79c896c9719dade24b0d31f2824abf86e7e77aacb3843f7fd32d2d8c13",
+    "src/version.ts": "1a08b7a2cb063a6d11e518b3c25828667240b6da7e0adeb95996157ffa9e9b81",
+    "tests/attachment-upload-electron.test.ts": "eb2a83444b6ce9c266e5decf663953380fec1f15840e2915a2739a332ce9f71f",
+    "tests/attachment-upload.test.ts": "a8e017bce4b0170fba5ab2eeb861c7c195293c607ad213ae950a8ae54d7ec346",
+    "tests/bridge-collaboration.test.ts": "bce12fe5ad2faeb9621e940cfd374e610c8b6198e81e7ad2735584590d51d066",
+    "tests/bridge-platform.test.ts": "1eda67229ab8b33fbdf6087b3142e0d8efe9f0d8b6e5e3c376f732f46ef86bdd",
+    "tests/bridge-stall-timeout.test.ts": "d0cd07ff69d74d26d97f152262ad48e6a53624ef8f14b21b231cd85a7e2ddf4d",
+    "tests/browser-cancellation.test.ts": "631a7f6cb845d9335a8178625ee3314c90bf26ca5b7b7f45b2e07f205f12e9d4",
+    "tests/browser-diagnostic-history.test.ts": "0e8bbbc35aad7d63946194051b4acf256293a37f6ba934afa89da5de2c12e163",
+    "tests/browser-generation.test.ts": "741b2c6bb516bf10ef5ad345271666f5a55e61546a6ab85f2411797a98fc35f8",
+    "tests/browser-live-progress.test.ts": "2f6641b040fcf735992931b1fa662c7672142a986cd5a3fab09b84fb05dfaad2",
+    "tests/browser-login.test.ts": "bf10d10d831820d1ee19c24884e361ab8f8948412af7ebd0baa8845ecaa89157",
+    "tests/browser-response-dom.test.ts": "eb576ecbe5fb749118c721ea8e2fea71c25ff5ff9810f4bf3d5febe33f772e36",
+    "tests/browser-turn-binding.test.ts": "9bdda9550408c8286c254c413e4448ebeb761635a7ec91b8e273b67ae6c1afc1",
+    "tests/browser-worker-contract.test.ts": "2c6570f88ff2c51653023201716cb42c46bc690e73389f58862eff2db709aaef",
+    "tests/chatgpt-effort-browser.test.ts": "554d3a45f4ae9c5fa84ca8f648a9e18a205b4ec5f567f1d7c9abfeee2f45387c",
+    "tests/chatgpt-limits-browser.test.ts": "7c586f0a5ab8581fcfaa99dafee84e4d933832ea2eabe04374bbf1400ce67721",
+    "tests/chatgpt-limits.test.ts": "aa9bb14e4e8ec8d6492a9e2ee787a6e6d223c7f06444e6ee8b26b7ddb7daf864",
+    "tests/chatgpt-markdown-parser.test.ts": "8b57c0ab78272bcd97e574c7cbe2d1cd378b2ce3c281b8579c3594466abc2b47",
+    "tests/chatgpt-model-family-browser.test.ts": "9f7e1193d77898775cfba5710e76d3df86e8ac6c00a363345ba367f721bc2eac",
+    "tests/chatgpt-model-selection.test.ts": "fb3a07c4bf245d2ad63393af89c88c33815aa07bf33a77dc4def1155485c9342",
+    "tests/chatgpt-session.test.ts": "352066e6d34a4d9a84c0e4cbca0c9578f141e4478f04fa5b6abf8b5544d7d113",
+    "tests/chatgpt-web-harness.test.ts": "c20bb1723c792c2baf073b04e5131cf840cfc1fd6e3d3f7023001d7f3f776722",
+    "tests/chatgpt-web-markdown.test.ts": "ad42a9d0b893f300f1249b5df6755b0f518d7cd0bbeee9116b2ac97d37a4681c",
+    "tests/chatgpt-web-models.test.ts": "0cf37b609ddfa892daa39c40578ed79a003cd9f4b8a7677086eb592fa4b8986f",
+    "tests/chatgpt-web-usage.test.ts": "525dbbaa30dc4528023127766ba2ebaf904d61d8e8ce06501d6d457587402eb0",
+    "tests/cli.test.ts": "b0bd5a25f361a54b630b7d7bd7e4e38a049b551945172526a8d6081130f5beff",
+    "tests/codex-integration.test.ts": "04207d26a24daf479bf04ecb89fb7b0d4ab180717d21169133ef6e1aa00641e5",
+    "tests/codex-interrupt-hook.test.ts": "2648a2509557c1aaaac044e8868ddd554948f06204ec00a99a2ef5eea6c1e54c",
+    "tests/compaction-browser-recovery.test.ts": "7d056d5a801ba48e334ff0cde9cac8de474c20b65216fe4934f8305b4cbb857f",
+    "tests/compaction-v1.test.ts": "c1521ecf44599c32512a501755ac32d405f0f31590a55f31fb13b9fdb2bad4bc",
+    "tests/composer-insert.test.ts": "a7978cbddb18bec51e4d272cd3bdf84e879ddd102d88a1cf3f7a875935e3d484",
+    "tests/context-markdown-regexp.test.ts": "a43edaf0928a23c61c8c4649d47b414e4a47ab2d435199d6845cb3fb56bc739e",
+    "tests/dev-chat.test.ts": "423f540ac01537d9d9f2d177c7f8d5895355d045df5cbd348956e4840113a7e2",
+    "tests/dev-profile.test.ts": "628806c172bdc10ffb4ea2c5eacf055f52068ac9f0ceee688b09eab2011e88b6",
+    "tests/environment.test.ts": "7a9d5307debcd3b4aa3107997ae0e615c5ed7eb5979733166fa6e6d74a6eb5c1",
+    "tests/fixtures/chatgpt-activity-summaries.html": "1cee4f88d70ed214656310defb925c0a16704ae673d36575a063660841f7c5fa",
+    "tests/fixtures/chatgpt-codemirror-reply-2026-10-11.html": "aa6cad28252b5a511ea3ba948a0753934d6d8dff88c1ee7db99a67acd90ad434",
+    "tests/fixtures/chatgpt-composer-stop.html": "a5603bf20596b6633b3f9c71d135ce6f8b33d617e339ee0c1af278b63d357db0",
+    "tests/fixtures/chatgpt-composer-think-2026-10-11.html": "65db2d0116ccf97ce1efef2ac7a6604d8ca4f0bb563f5671ca576bad2c04806b",
+    "tests/fixtures/chatgpt-composer-think.html": "99aab251cfd747576625d98709736328d1ea6eddbce1ae026747adc3da16fcf4",
+    "tests/fixtures/chatgpt-dil-smoke.html": "848a24b7f7db7204bb0ddeb701e8b614d0929a0728e4cb9bc37fb7ae28d52388",
+    "tests/fixtures/chatgpt-markdown-link-regexp.json": "a35daec957edb2eeeac34d2c3f17c9c779cee5eb221824d08e7dbec2913df404",
+    "tests/fixtures/chatgpt-power-activity.html": "53df98a71534bfed9de809c36e0f647ea675305f12abb1f8a62f3b88134f04d2",
+    "tests/fixtures/chatgpt-power-complete.html": "00c91f92a88d0a49632af7de43f8f8bd5983f5137915632ef76543af8368bd22",
+    "tests/fixtures/chatgpt-power-streaming.html": "fe5ef61ee163643b952f104d11447ffa923a8ea442e2a6375aac063ac92a6238",
+    "tests/http-body.test.ts": "25f861514628a697f87279e37c8c668619164396dd1b193871ae8768ab41d640",
+    "tests/launcher-browser-host.test.ts": "33da548f68f1123c20885fc57c6d1109646d74438e20fbfb410af7b8dd93b672",
+    "tests/launcher-helper-client.test.ts": "937ba9b5e49ec432096e198e4bedc677bee317f28419e9a1ad9493578f3e8f53",
+    "tests/launcher-localization.test.ts": "353081f682dce5b5c1b2a0ae0e1086f351c90f15ff9f12443a7a759609b682f6",
+    "tests/launcher-navigation-viewport.test.ts": "59ade91f7f1e0a32d24232a3830a4eefab40545b2586c439f847d91760e93607",
+    "tests/launcher-status.test.ts": "6228fd4a2029891f1d963b8d07bc59a39214f6fabadc41f5eb0341e74e8ef9af",
+    "tests/launcher-system-theme.test.ts": "f47587d58ad00d56b22abe97170e7ab35d18f41d28fcdee5d9372e2ad00ae20d",
+    "tests/launcher-viewport-browser.test.ts": "e6a19ee56653f4064adf52370f30da41bc564d3adab695a43031664ec0732799",
+    "tests/luna-bigger-context.test.ts": "655a630f984610fabc9a0f80808cd4d23577ad4b8e36d89886e55acf2e6cac43",
+    "tests/mcp-observation.test.ts": "c380fc3ef107aad855012a5883e5fbf9a9c329eabefe299f0d54d14e5ab919dc",
+    "tests/model-catalog.test.ts": "9e4eba6837e024260ccc1e2a600e2d258679a3c19fdddffd85b76791cc596a58",
+    "tests/model-contract.test.ts": "2d5575446a01759fcf6030c43b44d253e449dea8609715a631fa77c897d30130",
+    "tests/multipart-history.test.ts": "614883ac6b6021ae6db56e382a6a2870586494922ce3c9dc33859fecae665012",
+    "tests/native-network.test.ts": "c1693f0c193457db0cd3dfe39ab04af7927c673b66d80365ae48449e2e16889d",
+    "tests/native-passthrough.test.ts": "52f18db4cadae2c146116810b995f15a31c773c3160dec1aca6cd83e1b8298bb",
+    "tests/personalization-connector-preflight.test.ts": "f75a436c766a06a1441eeff58d4bf5784837d6ad67ae0848e36126aaa1410e7b",
+    "tests/process-line-writer.test.ts": "cae3020ee9fc54b19a4c5387c06a310da6e11d06ce76c5a857db63f34f9db203",
+    "tests/prompt-contract.test.ts": "524e7821c97128557baa496de9c79a37fa189632a4ca68fcadd171830aacb663",
+    "tests/prompt-history-metadata.test.ts": "2d10b69ec9d7738e4f26764ec54bd2b0f2226db5cb91902fce5041426bd6e2e6",
+    "tests/responses-agent-message.test.ts": "e4d92bf38a2e259fe34f07ca9d37a69246142608892a4dc83933dacf4699e955",
+    "tests/responses-lite-tools.test.ts": "e03c09f7aa6e91cf8895ae94f2d950f5fb8c70d998dbf73f076e02792edd81ac",
+    "tests/responses-text-controls.test.ts": "04458e2d3b921d5058952619867f8e24c9bd7c0cbd506d9c6cea18043e1c0547",
+    "tests/retained-compaction.test.ts": "a118d661252b555e0bc50cab9223c0ebffe44db58ecee461f00247f8742345d2",
+    "tests/rolling-checkpoint.test.ts": "8db02a774179d6cee4233ef188d4608188874def881363a2b958bd5c985b79ab",
+    "tests/runtime-layout.test.ts": "cad588e745da2a72253964d60fd220b6d0b35b3e1540266031c2c72ab5b7f1e9",
+    "tests/server-compaction.test.ts": "ad940a9538003bbfcf17ee1e4fcaa1391d161f556fb71357be368ba354754812",
+    "tests/server-lifecycle.test.ts": "e1dda76415a5207fe6f33c5ed75c974516b0a60be777c3a952ee73a00d674a12",
+    "tests/server-models.test.ts": "b5ad9d14f3b225d4d02faa0e2ef91e8100133363faa2730b3b552f8f7e8f4b4e",
+    "tests/server-predictions.test.ts": "242801db76a870bf1fd8e35e2a690ae36ba77deef4343796139c908ed15d16fd",
+    "tests/server-subagents.test.ts": "ce7e181644c24eb95457df58652fe80f9d80573f160e102834f8b00ce4397604",
+    "tests/service-lifecycle.test.ts": "f971f04b9dfa8aa5e70cdae20e5f22f4913067571434d1ec4d7b79ed6cdfa40b",
+    "tests/setup-lifecycle.test.ts": "4657e864b04898cf56a8554912e0e90960a800eb87f4d45393bd2a8379ad84c6",
+    "tests/skill-attachments.test.ts": "38b937bfa7caa97aa23d59df31de81305a3cf6eb82726b8c715984a21632c83b",
+    "tests/subagent-environment-history.test.ts": "8040bcc478c45a4ba775b1818b1d4af58d2079faba1c3f29c6f709f2ab6c9344",
+    "tests/token-estimate.test.ts": "4c00a7bdff935ff57343399326b4a1e9bf18c48daff4870b13834213fee3a08c",
+    "tests/tool-approval-dom.test.ts": "aef98f743ddc9cf2a98a72e1e7cb45e2f64d00a80b430a2387f5126a5551b10d",
+    "tests/tunnel-service.test.ts": "fbe0a7b30ff60488c8502156c0f9aef78c760bee6d2282b790fb3a47ef3cf183",
+    "tests/tunnel.test.ts": "e23f975c52ac811f9403439c098066a468af57ec9d35f4ba66b70b219ffc3db2",
+    "tests/turn-broker-diagnostics.test.ts": "04bf821c512fc946d1ff0af408d3d562ba68df8ed7ad00f65777459bf10d6399",
+    "tests/turn-broker-lifecycle.test.ts": "2ea6920f4b1fef6cf6a8dd1523eb47be8b0d2a8357da171f9e0ac8e2907d02ef",
+    "tests/zero-risk-adapter.test.ts": "2ce082558b660b02cfb92313d6abdac095bbd53c153a88be51aadffd76bd20e4",
+    "tests/zero-risk-mcp-lifecycle.test.ts": "61128064bf6d4141beb6831f97a8b60a200f98c06757f80754e70417ae42a469",
+    "tests/zero-risk-prompt-contract.test.ts": "3d14ef0882c7591a0675a41e3ab2f41f1c68b40417c80fc3e014d37df6f24443",
+    "tsconfig.json": "a7be042199d6e05c2441c7184ab6c85152cad6d8baed625963b6390d4a34b133"
+  },
+  "preload": {
+    "global": "codexWebLauncher",
+    "methods": {
+      "snapshot": {
+        "kind": "invoke",
+        "channel": "launcher:snapshot"
+      },
+      "getLimits": {
+        "kind": "invoke",
+        "channel": "launcher:limits"
+      },
+      "setupLimits": {
+        "kind": "invoke",
+        "channel": "launcher:limits-setup"
+      },
+      "setLanguage": {
+        "kind": "invoke",
+        "channel": "launcher:set-language"
+      },
+      "openSocial": {
+        "kind": "invoke",
+        "channel": "launcher:open-social"
+      },
+      "completeOnboarding": {
+        "kind": "invoke",
+        "channel": "launcher:complete-onboarding"
+      },
+      "openExternal": {
+        "kind": "invoke",
+        "channel": "launcher:open-external"
+      },
+      "setBrowserBounds": {
+        "kind": "invoke",
+        "channel": "launcher:browser-bounds"
+      },
+      "setBrowserSurfaceActive": {
+        "kind": "invoke",
+        "channel": "launcher:browser-surface-active"
+      },
+      "showBrowser": {
+        "kind": "invoke",
+        "channel": "launcher:browser-show"
+      },
+      "hideBrowser": {
+        "kind": "invoke",
+        "channel": "launcher:browser-hide"
+      },
+      "navigateBrowser": {
+        "kind": "invoke",
+        "channel": "launcher:browser-navigate"
+      },
+      "zoomBrowser": {
+        "kind": "invoke",
+        "channel": "launcher:browser-zoom"
+      },
+      "selectBrowserTab": {
+        "kind": "invoke",
+        "channel": "launcher:browser-tab-select"
+      },
+      "closeBrowserTab": {
+        "kind": "invoke",
+        "channel": "launcher:browser-tab-close"
+      },
+      "copyManualPrompt": {
+        "kind": "invoke",
+        "channel": "launcher:manual-prompt-copy"
+      },
+      "confirmManualSent": {
+        "kind": "invoke",
+        "channel": "launcher:manual-prompt-sent"
+      },
+      "openLogin": {
+        "kind": "invoke",
+        "channel": "launcher:browser-login"
+      },
+      "openPasskeyLogin": {
+        "kind": "invoke",
+        "channel": "launcher:browser-passkey-login"
+      },
+      "continuePasskeyLogin": {
+        "kind": "invoke",
+        "channel": "launcher:browser-passkey-login-continue"
+      },
+      "logoutChatGpt": {
+        "kind": "invoke",
+        "channel": "launcher:browser-logout"
+      },
+      "dismissSessionReminder": {
+        "kind": "invoke",
+        "channel": "launcher:session-reminder-dismiss"
+      },
+      "smokeTest": {
+        "kind": "invoke",
+        "channel": "launcher:browser-smoke"
+      },
+      "verifyMcp": {
+        "kind": "invoke",
+        "channel": "launcher:mcp-verify"
+      },
+      "doctor": {
+        "kind": "invoke",
+        "channel": "launcher:doctor"
+      },
+      "cancelTurns": {
+        "kind": "invoke",
+        "channel": "launcher:cancel-turns"
+      },
+      "uninstallIntegration": {
+        "kind": "invoke",
+        "channel": "launcher:uninstall-integration"
+      },
+      "setupCore": {
+        "kind": "invoke",
+        "channel": "launcher:setup-core"
+      },
+      "setupMcp": {
+        "kind": "invoke",
+        "channel": "launcher:setup-mcp"
+      },
+      "setConnectorNameSuffix": {
+        "kind": "invoke",
+        "channel": "launcher:connector-name"
+      },
+      "setMcpStep": {
+        "kind": "invoke",
+        "channel": "launcher:set-mcp-step"
+      },
+      "setAutostart": {
+        "kind": "invoke",
+        "channel": "launcher:autostart"
+      },
+      "setBiggerContext": {
+        "kind": "invoke",
+        "channel": "launcher:bigger-context"
+      },
+      "setComposerPredictions": {
+        "kind": "invoke",
+        "channel": "launcher:composer-predictions"
+      },
+      "setSkillAttachments": {
+        "kind": "invoke",
+        "channel": "launcher:skill-attachments"
+      },
+      "setFreshConversationPerTurn": {
+        "kind": "invoke",
+        "channel": "launcher:fresh-conversation-per-turn"
+      },
+      "setUseSavedChats": {
+        "kind": "invoke",
+        "channel": "launcher:use-saved-chats"
+      },
+      "setAutoApproveToolCalls": {
+        "kind": "invoke",
+        "channel": "launcher:auto-approve-tool-calls"
+      },
+      "setZeroRiskPro": {
+        "kind": "invoke",
+        "channel": "launcher:zero-risk-pro"
+      },
+      "setBrowserInteractionMode": {
+        "kind": "invoke",
+        "channel": "launcher:browser-interaction-mode"
+      },
+      "setPreference": {
+        "kind": "invoke",
+        "channel": "launcher:set-preference"
+      },
+      "setSidebarState": {
+        "kind": "invoke",
+        "channel": "launcher:sidebar-state"
+      },
+      "logs": {
+        "kind": "invoke",
+        "channel": "launcher:logs"
+      },
+      "exportLogs": {
+        "kind": "invoke",
+        "channel": "launcher:export-logs"
+      },
+      "installUpdate": {
+        "kind": "invoke",
+        "channel": "launcher:update-install"
+      },
+      "windowState": {
+        "kind": "invoke",
+        "channel": "launcher:window-state"
+      },
+      "windowControl": {
+        "kind": "send",
+        "channel": "launcher:window-control"
+      },
+      "onWindowStateChanged": {
+        "kind": "subscription",
+        "channel": "launcher:window-state-changed"
+      },
+      "onConnectorNamesChanged": {
+        "kind": "subscription",
+        "channel": "launcher:connector-names-changed"
+      },
+      "onStateChanged": {
+        "kind": "subscription",
+        "channel": "launcher:state-changed"
+      },
+      "onBrowserState": {
+        "kind": "subscription",
+        "channel": "launcher:browser-state"
+      },
+      "onOperation": {
+        "kind": "subscription",
+        "channel": "launcher:operation"
+      },
+      "onLog": {
+        "kind": "subscription",
+        "channel": "launcher:log"
+      },
+      "onUpdateState": {
+        "kind": "subscription",
+        "channel": "launcher:update-state"
+      }
+    }
+  },
+  "cef": {
+    "sourceSha": "1e8870069d8765d7aeb6cc74f1026bd7bca4aed2",
+    "patchSha256": "f1e77131249183a706c1def721c2484a96402eadce669907e6a0bca29ecbfe09",
+    "upstreamManifestSha256": "497d952370b51c19e6ccf859c0382fc12f81b85e98fd5d43b52ddd7351c0e37b",
+    "files": {
+      ".github/workflows/ci.yml": "2ac1a3084f6330a034e2d564dcf2744a8c5cae57ed7c351be3c296896b6866a3",
+      ".gitignore": "b53ee26e6ff1da219b0563333a76d2c9ec19eec713d6ee54e11a1edacb0e9f3d",
+      "Cargo.lock": "7803c42a933cddaa4ae78eff6de67c915108f46892f82674ad850c96c451e6ba",
+      "Cargo.toml": "1e5c36809084f90a55a833b023e468cd5adf529be57688fad9392ef7bdf5df60",
+      "README.md": "45092927e8f1818073004e94b17e1aa6a3b59f839b1c7bd8e1f1be17528f1de2",
+      "crates/gpui-cef/Cargo.toml": "7e831756885af42539f578dc92a07c448e1ffdeedf1d7f390a446bd5b1961b90",
+      "crates/gpui-cef/src/lib.rs": "7e8db1a7966d1098855a6aec38b8fc45591da9fcac5a9813ebb580531c3a9fe1",
+      "crates/gpui-cef/src/options.rs": "0eef25e73390246c88a76299b18d8bcb4cbbd3247b20d66c91d4d8342f5cde5f",
+      "crates/gpui-cef/src/platform/cef/handlers.rs": "9af635fee4d5e83fab946d1fa1c443d2fc568b75eb3a94f7c30f7d868ad6ff96",
+      "crates/gpui-cef/src/platform/cef/ime.rs": "ec99f346de88478bb999c47bf8671d9498224d562d865de2eb6246b1706a2e60",
+      "crates/gpui-cef/src/platform/cef/input.rs": "1e364669a7894a1558a8afb2ab8e93537c26a1fb9407b24d99f3c264fcb2c323",
+      "crates/gpui-cef/src/platform/cef/mod.rs": "c1df02fa4be31a9dfefb84ff47a445143f134baa6f2b80e702b8a923750bb49c",
+      "crates/gpui-cef/src/platform/cef/nsapp.rs": "bdaf206d97c01eeea72eafe275674bb5868a8b543c75153e81e613915955df83",
+      "crates/gpui-cef/src/platform/cef/pump.rs": "7580f63d740c81495dab92145134961215ffe1ca1de64810e54e9e9d1ab6de12",
+      "crates/gpui-cef/src/platform/cef/shared.rs": "149e132b303479f1f50fba2aacccd59a720e22b70b4b82bb64ee60ced4a5f912",
+      "crates/gpui-cef/src/platform/mod.rs": "f2fce8877b5e0e0ae2b86f1f92871461df561b546970174e9420c6c48ea82917",
+      "crates/gpui-cef/src/platform/unsupported.rs": "673e40e44f4584e2064785aebcb1dc63af452335521ca77fcb2b07d4f567150a",
+      "crates/gpui-cef/src/platform/wry/mod.rs": "4dc767a2f13c894c4b296f64c4b8f88a0e0c961de89341163a5281e4c269ba9e",
+      "examples/browser/Cargo.toml": "e14d1b538ae1d2033b229a5c42f55fb1304203fb876b503ad9daea4c128a2b82",
+      "examples/browser/src/bin/helper.rs": "18f38a6cf2e1d7e369894b7f9937be209a3b686793859bfc0c1089830e6c89ed",
+      "examples/browser/src/main.rs": "188c2cc539227f6b16e3b112acae0074ad616d4eb397578a08d9a5d05f067818",
+      "justfile": "f521c8c8c443fcb0f41d6f0a4decacb54f067ed8c9f14fd8a4172e2bc3c61cdb",
+      "xtask/Cargo.toml": "951ad0b525ca968548719092bfee12757e22c1039c4cdf8162d4e73023700142",
+      "xtask/src/main.rs": "5776d4053a575171850c48d013633396dc4d801f005e862b189d1225866626d7"
+    }
+  }
+}
