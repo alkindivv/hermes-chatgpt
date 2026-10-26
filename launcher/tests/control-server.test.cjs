@@ -649,7 +649,7 @@ test("manual-to-automatic transaction exposes capability inspection and preserve
       inspections += 1;
       assert.equal(detectCapabilities, true);
       assert.equal(host.browserInteractionMode(), "automatic");
-      return { authenticated: true, temporary: true, url: "https://chatgpt.com/" };
+      return { authenticated: true, newChat: true, url: "https://chatgpt.com/" };
     },
     removeTurnTab(tab, abortRunning) {
       assert.equal(abortRunning, false);
@@ -733,6 +733,43 @@ test("browser control server reports a missing retained conversation as a typed 
     assert.deepEqual(await response.json(), {
       error: "The retained ChatGPT conversation is no longer available",
       code: "retained_conversation_unavailable",
+    });
+  } finally {
+    await server.close();
+  }
+});
+
+test("browser control server reports a lost running helper as a typed conflict", async () => {
+  const host = {
+    browserInteractionMode: () => "automatic",
+    beginTurn: () => {
+      const error = new Error("The running ChatGPT turn lost its helper");
+      error.code = "turn_owner_lost";
+      throw error;
+    },
+  };
+  const server = await new BrowserControlServer({
+    logger: { info() {}, warn() {} },
+    getBrowserHost: () => host,
+    getPreferences: () => ({ showBrowserDuringTurns: false }),
+  }).start();
+  const descriptor = server.descriptor();
+  try {
+    const response = await fetch(`${descriptor.endpoint}/v1/turn/start`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${descriptor.token}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        phase: "start",
+        traceId: "missing123456",
+        helperPid: process.pid,
+        conversationKey: "a".repeat(64),
+        requireRetainedConversation: true,
+      }),
+    });
+    assert.equal(response.status, 409);
+    assert.deepEqual(await response.json(), {
+      error: "The running ChatGPT turn lost its helper",
+      code: "turn_owner_lost",
     });
   } finally {
     await server.close();

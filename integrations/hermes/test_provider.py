@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import copy
 import os
+import runpy
 from pathlib import Path
 import shutil
 import subprocess
@@ -233,10 +234,18 @@ class ProviderContractTest(unittest.TestCase):
                 self.assertFalse((home_a / "config.yaml").exists())
 
     def test_20_streaming_bridge_errors_reach_native_hermes_classifier(self):
+        # The discovery test above uses a temporary Hermes home, then removes it.
+        # Register this test's provider in-process instead of bootstrapping a second
+        # Hermes CLI home (which may try to install unrelated global dependencies).
+        runpy.run_path(str(ROOT / "model-provider" / "__init__.py"))
+
         bun = os.environ.get("HERMES_TEST_BUN")
         self.assertTrue(bun, "Set HERMES_TEST_BUN to the pinned Bun runtime")
         token = "error-classifier-test-" + "x" * 48
-        env = {**os.environ, "HERMES_CHATGPT_TEST_KEY": token}
+        isolated_home = tempfile.TemporaryDirectory(prefix="hermes-stream-broker-")
+        self.addCleanup(isolated_home.cleanup)
+        env = {**os.environ, "HERMES_CHATGPT_TEST_KEY": token,
+               "CODEX_CHATGPT_WEB_HOME": isolated_home.name}
         process = subprocess.Popen(
             [bun, str(ROOT / "error-classifier-fixture.ts")],
             cwd=ROOT.parent.parent,
@@ -392,10 +401,13 @@ class ProviderContractTest(unittest.TestCase):
         bun = os.environ.get("HERMES_TEST_BUN")
         self.assertTrue(bun, "Set HERMES_TEST_BUN to the pinned Bun runtime")
         token = "profile-sync-test-" + "x" * 48
+        isolated_home = tempfile.TemporaryDirectory(prefix="hermes-sync-broker-")
+        self.addCleanup(isolated_home.cleanup)
         process = subprocess.Popen(
             [bun, str(ROOT / "error-classifier-fixture.ts")],
             cwd=ROOT.parent.parent,
-            env={**os.environ, "HERMES_CHATGPT_TEST_KEY": token},
+            env={**os.environ, "HERMES_CHATGPT_TEST_KEY": token,
+                 "CODEX_CHATGPT_WEB_HOME": isolated_home.name},
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,

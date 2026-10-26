@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { defaultConfig } from "../src/config";
+import { defaultConfig, parseConfig } from "../src/config";
 import { mcpCommand } from "../src/tunnel";
 import { loadHermesConfig, saveHermesConfig, readHermesApiToken } from "../src/hermes/config";
 import { resolveHermesRuntimeKeyInput } from "../src/hermes/cli";
@@ -18,6 +18,15 @@ function fixture() {
     tunnel: { binaryPath: process.execPath, tunnelId: "tunnel_" + "a".repeat(32), runtimeKeyFile: join(home, "secrets", "tunnel.key"), profileDir: join(home, "tunnel", "profiles"), profileName: "hermes-test", alias: "hermes-test" } };
   return { home, runtime };
 }
+
+test("Hermes connector exception is exact and cannot be used by Codex runtime", () => {
+  const { home, runtime } = fixture();
+  expect(parseConfig(runtime, join(home, "hermes.json")).appName).toBe("Hermes ChatGPT");
+  expect(() => parseConfig({ ...runtime, runtimeBackend: undefined }, join(home, "codex.json")))
+    .toThrow("Plugin names must start with Codex");
+  expect(() => parseConfig({ ...runtime, automaticAppName: "Hermes Arbitrary", appName: "Hermes Arbitrary" }, join(home, "hermes.json")))
+    .toThrow("Plugin names must start with Codex");
+});
 
 test("Hermes config and local auth key are isolated, private, and preserve their identity on updates", () => {
   const { home, runtime } = fixture();

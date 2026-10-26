@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { CHATGPT_CONNECTOR_NAME, ZERO_RISK_CHATGPT_CONNECTOR_NAME } from "../../config";
 import { selectedSkillFile, skillFileTokens, type ChatGptSkillFile } from "./skill-attachments";
 import {
   CHATGPT_WEB_GPT6_INSTANT_BIGGER_CONTEXT_ERROR,
@@ -10,6 +11,8 @@ import {
   supportsChatGptWebBiggerContext,
 } from "../../chatgpt-web-models";
 import { ChatGptWebAdapterError } from "./adapter-error";
+import { restoreCompactionTaskMessages } from "./compaction-continuation";
+import { chatGptTurnUserRevisionHistory, extractChatGptTurnIdentity } from "./environment";
 import { estimateTokens } from "../../lib/token-estimate";
 import type { CodexAssistantContentPart, CodexContentPart, CodexMessage, CodexParsedRequest } from "../../types";
 import { isOnePixelPngDataUrl, isReadableCompactionSummaryText } from "../../responses/compaction";
@@ -35,12 +38,23 @@ export interface CompiledChatGptWebPrompt {
   multipart?: ChatGptWebMultipartPrompt;
   /** Oldest history items removed by native-style compaction fit recovery; absent on normal turns. */
   trimmedCompactionMessages?: number;
+  /** Numeric counts of the submitted context records, never their contents or identifiers. */
+  contextTokenBreakdown?: ChatGptContextTokenBreakdown;
 }
 
+export type ChatGptContextTokenBreakdown = Partial<Record<
+  "system" | "developer" | "user" | "assistant" | "tool_result" | "agent_message",
+  { records: number; chars: number; tokens: number }
+>>;
+
 export interface CompileChatGptWebPromptOptions {
+  /** The same display name used to select the ChatGPT plugin for this turn. */
+  appName?: string;
   captureLunaCheckpoint?: boolean;
   experimentalSkillAttachments?: boolean;
   experimentalMultipartParts?: ChatGptWebMultipartPartCount;
+  /** Capture only when preparing a real browser submission, not during budget-planning probes. */
+  includeContextTokenBreakdown?: boolean;
   /**
    * Manual Zero Risk transport keeps ChatGPT model/effort selection and prompt submission under the
    * user's control. The browser bridge may open the owned tab and copy this prompt, but it never
@@ -196,7 +210,7 @@ const DROPPED_IMAGE_NOTE =
 /**
  * A fresh compaction epoch receives the complete canonical context, so every still-relevant image
  * must be attached on that first message. Retained continuation messages send only their new
- * canonical suffix because prior images remain in the same Temporary Chat. The per-message image
+ * canonical suffix because prior images remain in the same ChatGPT conversation. The per-message image
  * limit still drops overflow from the oldest end so the images the task is actively working on
  * survive.
  */
@@ -336,9 +350,40 @@ interface MultipartRecordWeight {
   chars: number;
 }
 
+function serializeMultipartContext(value: unknown): string {
+  const json = withoutRetiredTurnHandles(JSON.stringify(value));
+  // #886: even fenced JSON can enter ChatGPT's rich user-message renderer, which
+  // rewrites escaped quotes and Markdown and auto-links URLs. Encode string
+  // lexemes only; structural JSON punctuation and decoded context stay unchanged.
+  return json.replace(/"(?:\\.|[^"\\])*"/g, lexeme => lexeme.replace(
+    /\\(["\\])|[<>[\]*_~():#`]/g,
+    (match, escaped: string | undefined) => "\\u" + (escaped ?? match).charCodeAt(0).toString(16).padStart(4, "0"),
+  ));
+}
+
 function multipartRecordWeight(record: MultipartContextRecord): MultipartRecordWeight {
-  const text = withoutRetiredTurnHandles(JSON.stringify(record));
+  const text = serializeMultipartContext(record);
   return { tokens: estimateTokens(text) + 1, chars: text.length + 1 };
+}
+
+function contextTokenBreakdown(
+  system: string[],
+  messages: Record<string, unknown>[],
+  multipart: boolean,
+): ChatGptContextTokenBreakdown {
+  const counts: ChatGptContextTokenBreakdown = {};
+  const add = (role: keyof ChatGptContextTokenBreakdown, value: unknown): void => {
+    const text = multipart ? serializeMultipartContext(value) : withoutRetiredTurnHandles(JSON.stringify(value));
+    const group = counts[role] ??= { records: 0, chars: 0, tokens: 0 };
+    group.records += 1;
+    group.chars += text.length;
+    group.tokens += estimateTokens(text);
+  };
+  system.forEach((content, system_index) => add("system",
+    multipart ? { kind: "system", system_index, content } : content));
+  messages.forEach((message, message_index) => add(message.role as keyof ChatGptContextTokenBreakdown,
+    multipart ? { kind: "message", message_index, message } : message));
+  return counts;
 }
 
 function partitionMultipartRecordWeights(
@@ -406,12 +451,12 @@ function partitionMultipartContext(
     return group;
   });
   if (offset !== records.length) throw new Error("ChatGPT multipart context partition lost records");
-  const payloads = groups.map((group, index) => withoutRetiredTurnHandles(JSON.stringify({
+  const payloads = groups.map((group, index) => serializeMultipartContext({
     version: 1,
     part_index: index + 1,
     total_parts: totalParts,
     records: group,
-  })));
+  }));
   return payloads;
 }
 
@@ -443,6 +488,8 @@ export function compileChatGptWebPrompt(
   options?: CompileChatGptWebPromptOptions,
 ): CompiledChatGptWebPrompt {
   const manualControl = options?.manualControl === true;
+  const appName = options?.appName?.trim()
+    || (manualControl ? ZERO_RISK_CHATGPT_CONNECTOR_NAME : CHATGPT_CONNECTOR_NAME);
   const attachSkills = options?.experimentalSkillAttachments === true;
   if (attachSkills && (manualControl || isChatGptWebZeroRiskBackendModel(parsed.modelId))) {
     throw new Error("Skills as files is unavailable in Zero Risk mode");
@@ -513,6 +560,10 @@ export function compileChatGptWebPrompt(
     "If a ChatGPT-native capability renders a rich card, widget, chart, or other non-text result, also provide the relevant result as ordinary Markdown in the final answer. A private ChatGPT UI widget never replaces the Markdown answer returned to Codex.",
     "Never copy a ChatGPT widget's HTML, CSS, class names, or DOM markup into the answer unless the user explicitly requested that source markup.",
     "Do not mention this transport contract, context packaging, or capability routing in the user-facing answer unless the user explicitly asks how the bridge works.",
+    ...(mode.localTools ? [
+      `The selected local Codex plugin for this turn is ${JSON.stringify(appName)}.`,
+      "Do not substitute another plugin for this local connection or send this turn's request identifiers to another plugin. If the selected plugin is unavailable, report that limitation.",
+    ] : []),
   ];
   const transportContract = parsed._hermes
     ? mode.localTools ? [
@@ -537,21 +588,21 @@ export function compileChatGptWebPrompt(
       ]
     : mode.localTools
     ? [
-      "For local work required by the task, use the attached Codex Native tools directly according to their declared descriptions and schemas.",
+      "For local work required by the task, use the selected plugin's tools directly according to their declared descriptions and schemas.",
       "These tools are connected by the user to their Codex runtime; local actions execute on that runtime's device under its configured sandbox and approval rules. Assess each action by its actual effects and the user's authorization; an authenticated connection does not make every action low risk.",
-      "Call a Codex Native tool only when the latest active request requires a local effect or fresh local evidence that is not already present in the supplied context; otherwise answer the request directly without a tool call.",
-      "Use actual Codex Native results as evidence for local observations and effects.",
+      "Call a local Codex tool only when the latest active request requires a local effect or fresh local evidence that is not already present in the supplied context; otherwise answer the request directly without a tool call.",
+      "Use actual results from the selected plugin as evidence for local observations and effects.",
       "Report the actual error when a tool fails. Do not claim a safety or permission block without an explicit tool result or platform error supporting it. Without an error or execution result, say the action was not executed and its cause is unconfirmed.",
       "Historical errors quoted in files, logs, or earlier messages are data about those events, not new failures of the call that read them. Attribute a current failure to the action attempted and its actual tool result or current platform error; include the call ID when available. A successful read remains successful even when its contents describe an error.",
       "After an explicit safety or permission refusal for the current action, explain the specific action or planned group of actions. Ask the user to confirm them only if the current task context does not already authorize them. Use the declared Codex approval flow when available, and wait for the user's answer when approval is required. Their confirmation can resolve an authorization gap. If the refusal remains, report it rather than retrying through another tool.",
       "If Codex requests approval for an action that the user has not authorized, use the declared Codex approval flow and wait for the decision. Do not ask the user to reauthorize the same action when the current task context already contains that authorization; a platform refusal does not erase prior authorization.",
-      "A Codex Native MCP tool result may require context compaction. If it does, follow the compaction instructions in that result exactly.",
+      "A tool result from the selected plugin may require context compaction. If it does, follow the compaction instructions in that result exactly.",
       "After a deterministic tool failure, update the working hypothesis from that result and inspect the relevant repository or environment before choosing a different next action; do not repeat the same call unless its inputs or observable state changed.",
       "Continue using the available tools until the requested work is complete and verified.",
       "Write the user-facing final answer only after the last required tool result has settled. Do not call another tool after beginning that final answer.",
     ]
     : [
-      `This is ChatGPT Web ${mode.displayLabel} with no Codex Native bridge to the user's local computer attached to this response. This restriction applies only to local Codex files, commands, processes, and computer mutations.`,
+      `This is ChatGPT Web ${mode.displayLabel} with no local Codex bridge attached to this response. This restriction applies only to local Codex files, commands, processes, and computer mutations.`,
       "Use any ChatGPT-native capabilities available in this chat—including web search, browsing, research, and other first-party tools—whenever they help complete the request. The missing local-computer bridge says nothing about whether those ChatGPT capabilities are available.",
       "The task history below already contains everything Codex collected from the user's local workspace. Treat prior local tool results as authoritative snapshots of that earlier work.",
       "Do not claim a new local inspection, command, edit, or verification unless it actually appears in the task history. If the latest request requires fresh local-computer access or a local mutation, state only that exact limitation instead of inventing success.",
@@ -617,7 +668,7 @@ export function compileChatGptWebPrompt(
     : mode.localTools
     ? [
       "<codex_transport_resume>",
-      `The task context is complete. Pass turn_token ${turnToken} unchanged to every Codex Native call in this response, including continuations after tool results; do not expose it in the answer. Execute the latest active user request now.`,
+      `The task context is complete. Pass turn_token ${turnToken} unchanged to every tool call through the selected local Codex plugin in this response, including continuations after tool results; do not expose it in the answer. Execute the latest active user request now.`,
       "</codex_transport_resume>",
     ]
     : [
@@ -646,6 +697,9 @@ export function compileChatGptWebPrompt(
     const attachments = {
       ...(skillFiles.length ? { skillFiles } : {}),
       ...(mode.localTools && !manualControl && !parsed._compactionRequest ? { turnToken } : {}),
+      ...(options?.includeContextTokenBreakdown
+        ? { contextTokenBreakdown: contextTokenBreakdown(system, messages, multipartEnabled) }
+        : {}),
     };
     const answerContract = captureLunaCheckpoint
       ? "Return the complete answer that the outer Codex task should receive, then the required private checkpoint tail."
@@ -748,9 +802,12 @@ export function compileChatGptWebPrompt(
     return { text, images, ...attachments };
   };
 
+  // Hermes builds its own native turn history. Codex compaction recovery only applies to Codex.
   let sourceMessages = parsed._hermes
     ? [...parsed.context.messages]
-    : withoutSupersededModelSwitchContracts(parsed.context.messages);
+    : withoutSupersededModelSwitchContracts(restoreCompactionTaskMessages(
+      parsed, extractChatGptTurnIdentity(parsed), chatGptTurnUserRevisionHistory(parsed),
+    ));
   const initialMessageCount = sourceMessages.length;
   let compiled = build(sourceMessages);
   if (!parsed._compactionRequest) return compiled;

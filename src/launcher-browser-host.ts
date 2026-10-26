@@ -22,6 +22,13 @@ export class LauncherRetainedConversationUnavailableError extends Error {
   }
 }
 
+export class LauncherBrowserTurnOwnerLostError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "LauncherBrowserTurnOwnerLostError";
+  }
+}
+
 export class LauncherManualTurnTimedOutError extends Error {
   constructor(message: string) {
     super(message);
@@ -447,7 +454,7 @@ export async function inspectLauncherBrowserHost(
     });
     const body = await response.json().catch(() => ({})) as Record<string, unknown>;
     if (!response.ok) throw new Error(typeof body.error === "string" ? body.error : `HTTP ${response.status}`);
-    if (body.authenticated !== true || body.temporary !== true || typeof body.url !== "string") {
+    if (body.authenticated !== true || body.newChat !== true || typeof body.url !== "string") {
       throw new Error("Launcher returned invalid ChatGPT session evidence");
     }
     if (options.detectCapabilities
@@ -820,6 +827,11 @@ export async function notifyLauncherTurn(
             typeof body.error === "string" ? body.error : "The retained ChatGPT conversation is no longer available",
           );
         }
+        if (response.status === 409 && body.code === "turn_owner_lost") {
+          throw new LauncherBrowserTurnOwnerLostError(
+            typeof body.error === "string" ? body.error : "The running ChatGPT turn lost its browser helper. Check its tab before retrying.",
+          );
+        }
         const detail = typeof body.error === "string" ? body.error : "";
         throw new Error(`HTTP ${response.status}${detail ? `: ${detail}` : ""}`);
       }
@@ -860,6 +872,7 @@ export async function notifyLauncherTurn(
         throw new DOMException("Launcher browser acquisition cancelled", "AbortError");
       }
       if (error instanceof LauncherBrowserTurnCancelledError
+        || error instanceof LauncherBrowserTurnOwnerLostError
         || error instanceof LauncherRetainedConversationUnavailableError) {
         throw error;
       }
@@ -869,6 +882,7 @@ export async function notifyLauncherTurn(
     } finally {
       clearTimeout(timer);
     }
+
   }
 
   throw new Error(
