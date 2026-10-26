@@ -72,6 +72,12 @@ The browser host writes its owner-only descriptor at:
 Remote-browser-host-only mode does not start the local Responses daemon, MCP tunnel, or Codex route
 on the VPS.
 
+**Release safeguard:** This mode is specific to this fork. The stock upstream AppImage does not
+include `CODEX_CHATGPT_WEB_REMOTE_BROWSER_HOST_ONLY`. Do not replace the VPS AppImage directly
+with the upstream release asset. Build and verify the fork's packaged launcher, keep a rollback
+copy of the previous AppImage, and restart Electron only after verifying that no owned browser
+turn is active. The Mac remains the sole owner of Codex tools and project files.
+
 ## 2. Connect the Mac to the VPS
 
 Run this on the Mac from the matching fork/runtime:

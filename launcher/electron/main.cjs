@@ -1256,7 +1256,7 @@ async function start() {
     currentVersion: app.getVersion(),
     platform: process.platform,
     arch: process.arch,
-    packaged: app.isPackaged && !IS_DEV_PROFILE,
+    packaged: app.isPackaged && !IS_DEV_PROFILE && !REMOTE_BROWSER_HOST_ONLY,
     executablePath: process.execPath,
     runtimeExecutable: updaterRuntimeRoot
       ? runtimeBundlePaths(updaterRuntimeRoot, process.platform).executable
@@ -1277,7 +1277,7 @@ async function start() {
     });
   }
   await loadRenderer(mainWindow);
-  if (!launcherSmokeTest) void updateController.checkOnce();
+  if (!launcherSmokeTest && !REMOTE_BROWSER_HOST_ONLY) void updateController.checkOnce();
   if (launcherSmokeTest) {
     const smokeRuntimeRoot = runtimeRootProvider();
     if (app.isPackaged && !smokeRuntimeRoot) {

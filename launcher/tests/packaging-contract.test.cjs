@@ -13,6 +13,16 @@ const repositoryRoot = path.resolve(launcherRoot, "..");
 const manifest = JSON.parse(fs.readFileSync(path.join(launcherRoot, "package.json"), "utf8"));
 const repositoryManifest = JSON.parse(fs.readFileSync(path.join(repositoryRoot, "package.json"), "utf8"));
 
+test("fork VPS package retains browser-only ownership instead of starting a VPS Codex runtime", () => {
+  const main = fs.readFileSync(path.join(launcherRoot, "electron", "main.cjs"), "utf8");
+  assert.match(main, /CODEX_CHATGPT_WEB_REMOTE_BROWSER_HOST_ONLY/);
+  assert.match(main, /cancelTurn:\s*IS_DEV_PROFILE \|\| REMOTE_BROWSER_HOST_ONLY/);
+  assert.match(main, /getConnectorName:\s*\(\) => REMOTE_BROWSER_HOST_ONLY/);
+  assert.match(main, /if \(REMOTE_BROWSER_HOST_ONLY\) \{[\s\S]*?remote_browser_host\.ready[\s\S]*?return;/);
+  assert.match(main, /packaged:\s*app\.isPackaged && !IS_DEV_PROFILE && !REMOTE_BROWSER_HOST_ONLY/);
+  assert.match(main, /if \(!launcherSmokeTest && !REMOTE_BROWSER_HOST_ONLY\) void updateController\.checkOnce\(\);/);
+});
+
 test("the public launcher command uses the Electron bootstrap", () => {
   assert.equal(repositoryManifest.scripts.launcher, "bun run scripts/start-launcher.ts");
   assert.equal(repositoryManifest.scripts.launcher, repositoryManifest.scripts.app);
